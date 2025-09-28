@@ -225,4 +225,69 @@ class VerificationDataset(nn.Module):
             label = self.target_transform(label)
         
         return (image1, image2), label
+
+
+class CALFW_dataset(VerificationDataset):
+    
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+        self.image_pairs = []
+        self.labels = []
+        self.dataset_dir = dataset_dir
+
+        # Read the pairs.txt file
+        pairs_file = os.path.join(dataset_dir, 'pairs_CALFW.txt')
+        with open(pairs_file, 'r') as f:
+            lines = f.readlines()
         
+        for i in range(0, len(lines), 2): 
+            image1, label1 = lines[i].split(' ')
+            image2, label2 = lines[i+1].split(' ')
+
+            assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
+
+            if eval(label1.strip()) > 0: # Same identity
+                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+                self.labels.append(0)
+            else: # Different identity
+                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+                self.labels.append(1)
+
+        if shuffle:
+            combined = list(zip(self.image_pairs, self.labels))
+            np.random.shuffle(combined)
+            self.image_pairs[:], self.labels[:] = zip(*combined)
+
+        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+
+
+class CPLFW_dataset(VerificationDataset):
+    
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+        self.image_pairs = []
+        self.labels = []
+        self.dataset_dir = dataset_dir
+
+        # Read the pairs.txt file
+        pairs_file = os.path.join(dataset_dir, 'pairs_CPLFW.txt')
+        with open(pairs_file, 'r') as f:
+            lines = f.readlines()
+        
+        for i in range(0, len(lines), 2): 
+            image1, label1 = lines[i].split(' ')
+            image2, label2 = lines[i+1].split(' ')
+
+            assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
+
+            if eval(label1.strip()) > 0: # Same identity
+                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+                self.labels.append(0)
+            else: # Different identity
+                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+                self.labels.append(1)
+
+        if shuffle:
+            combined = list(zip(self.image_pairs, self.labels))
+            np.random.shuffle(combined)
+            self.image_pairs[:], self.labels[:] = zip(*combined)
+
+        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
