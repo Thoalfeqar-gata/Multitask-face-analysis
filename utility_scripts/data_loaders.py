@@ -172,3 +172,57 @@ class CasiaWebFace_dataset(SimpleFaceRecognitionDataset):
 #############################################
 
 
+class VerificationDataset(nn.Module):
+    """
+        A general verification dataset that can be inherited. 
+        These datasets will only be used for evaluation (no training).
+        The dataset is assumed to be organized in pairs of images with corresponding labels/distances (0 for same identity, 1 for different identity).
+    """
+
+    def __init__(self, dataset_dir, image_pairs, labels, image_transform = None, target_transform = None, seed = 100):
+        '''
+        Args:
+            dataset_dir: (str) The directory of the dataset. Used to obtain the full image paths.
+
+            image_pairs: (list) A list of tuples containing pairs of image paths (has to be sorted according to the labels)
+
+            labels: (list) A list of integers for the labels (1 for same identity, 0 for different identity) (has to be sorted in ascending order)
+
+            image_transform: (transform) The transform to be applied to the images.
+
+            target_transform: (transform) The transform to be applied to the target (labels).
+
+            seed: A seed to initialize the random number generator.
+        '''
+        super().__init__()
+        np.random.seed(seed)
+        
+        assert len(image_pairs) == len(labels), "Please make sure the image_pairs and labels are of equal length and correspond correctly!"
+
+        self.dataset_dir = dataset_dir
+        self.image_pairs = np.array(image_pairs, dtype = object)
+        self.labels = np.array(labels, dtype = int)
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        image_path1 = os.path.join(self.dataset_dir, self.image_pairs[idx][0]) # Full path for image 1
+        image_path2 = os.path.join(self.dataset_dir, self.image_pairs[idx][1]) # Full path for image 2
+
+        image1 = decode_image(image_path1)
+        image2 = decode_image(image_path2)
+
+        label = self.labels[idx]
+        
+        # Apply transforms if any
+        if self.image_transform:
+            image1 = self.image_transform(image1)
+            image2 = self.image_transform(image2)
+        if self.target_transform:
+            label = self.target_transform(label)
+        
+        return (image1, image2), label
+        
