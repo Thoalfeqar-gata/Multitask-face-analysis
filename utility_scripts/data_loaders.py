@@ -128,6 +128,9 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
         self.image_paths = []
         self.labels = []
         self.dataset_dir = dataset_dir
+        self.subset = subset
+        self.train_split = train_split
+        self.seed = seed
 
         # Sort the classes numerically if they are digits
         classes = os.listdir(dataset_dir)
@@ -151,19 +154,19 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
 
 
 # Specific datasets can inherit from SimpleFaceRecognitionDataset
-class VGGFace_dataset(SimpleFaceRecognitionDataset):
+class VGGFace_Dataset(SimpleFaceRecognitionDataset):
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100):
        super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
-class MS1MV2_dataset(SimpleFaceRecognitionDataset):
+class MS1MV2_Dataset(SimpleFaceRecognitionDataset):
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100):
        super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
-class Glint360k_dataset(SimpleFaceRecognitionDataset):
+class Glint360k_Dataset(SimpleFaceRecognitionDataset):
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100):
        super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
-class CasiaWebFace_dataset(SimpleFaceRecognitionDataset):
+class CasiaWebFace_Dataset(SimpleFaceRecognitionDataset):
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100):
        super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
@@ -269,16 +272,16 @@ class _PairedTxtVerificationDataset(VerificationDataset):
         super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
 
 
-class CALFW_dataset(_PairedTxtVerificationDataset):
+class CALFW_Dataset(_PairedTxtVerificationDataset):
     def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
         super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform, shuffle, seed)
 
-class CPLFW_dataset(_PairedTxtVerificationDataset):
+class CPLFW_Dataset(_PairedTxtVerificationDataset):
     def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
         super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform, shuffle, seed)
 
 
-class CFP_dataset(VerificationDataset):
+class CFP_Dataset(VerificationDataset):
     
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
         rng = np.random.RandomState(seed)
@@ -308,7 +311,7 @@ class CFP_dataset(VerificationDataset):
         super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
 
 
-class LFW_dataset(VerificationDataset):
+class LFW_Dataset(VerificationDataset):
     """
     Loads the Labeled Faces in the Wild (LFW) dataset for face verification.
     It parses the standard `pairs.txt` file to create image pairs.
@@ -364,3 +367,51 @@ class LFW_dataset(VerificationDataset):
                 )
 
         super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+
+
+#############################################
+
+#    Emotion Recognition Datasets
+
+#############################################
+
+class RAF_Dataset(ClassificationDataset):
+    """
+    A RAF_Dataset class that inherits from ClassificationDataset.
+    RAF_subet: (str) can be either 'train' or 'test', and is used to choose the RAF train or test split.
+                     it is different from the subset variable in the ClassificationDataset class. (sets it to None by default).
+    """
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, RAF_subset = 'train', seed = 100, shuffle = False):
+        self.dataset_dir = dataset_dir
+        self.image_paths = []
+        self.labels = []
+        rng = np.random.RandomState(seed)
+
+        if RAF_subset == 'train': #if training
+            label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_train_label.txt')
+
+            with open(label_file, 'r') as f:
+                lines = f.readlines()
+
+                for line in lines:
+                    image_name, label = line.split(' ')
+                    self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
+                    self.labels.append(int(label) - 1) #labels should be from 0 to 6, not 1 to 7
+
+        else: #if testing
+            label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_test_label.txt')
+
+            with open(label_file, 'r') as f:
+                lines = f.readlines()   
+                
+                for line in lines:
+                    image_name, label = line.split(' ')
+                    self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
+                    self.labels.append(int(label) - 1) #labels should be from 0 to 6, not 1 to 7
+        
+        if shuffle:
+            combined = list(zip(self.image_paths, self.labels))
+            rng.shuffle(combined)
+            self.image_paths[:], self.labels[:] = zip(*combined)
+
+        super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
