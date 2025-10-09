@@ -4,7 +4,9 @@ import torchvision
 import torchvision.transforms as transforms
 import os
 import numpy as np
+import pandas as pd
 from torchvision.io import decode_image
+
 
 #############################################
 
@@ -186,7 +188,7 @@ class VerificationDataset(nn.Module):
 
             image_pairs: (list) A list of tuples containing pairs of image paths (has to be sorted according to the labels)
 
-            labels: (list) A list of integers for the labels (1 for same identity, 0 for different identity) (has to be sorted in ascending order)
+            labels: (list) A list of integers for the labels (0 for same identity, 1 for different identity) (has to be sorted in ascending order)
 
             image_transform: (transform) The transform to be applied to the images.
 
@@ -284,6 +286,35 @@ class CPLFW_dataset(VerificationDataset):
             else: # Different identity
                 self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
                 self.labels.append(1)
+
+        if shuffle:
+            combined = list(zip(self.image_pairs, self.labels))
+            np.random.shuffle(combined)
+            self.image_pairs[:], self.labels[:] = zip(*combined)
+
+        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+
+
+class CFP_dataset(VerificationDataset):
+    
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+        self.image_pairs = []
+        self.labels = []
+        self.dataset_dir = dataset_dir
+
+        # Read the pairs.txt file
+        pairs_file = os.path.join(dataset_dir, 'labels.csv')
+        pairs_df = pd.read_csv(pairs_file)
+
+        
+        for i, row in pairs_df.iterrows():
+            image1 = row.iloc[0]
+            image2 = row.iloc[1]
+            label = row.iloc[2]
+            
+            self.image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
+            self.labels.append(0 if label else 1) # append 0 if the label is true (0 represents zero distance for similar images) else append 1
+        
 
         if shuffle:
             combined = list(zip(self.image_pairs, self.labels))
