@@ -14,7 +14,7 @@ from torchvision.io import decode_image
 
 #############################################
 
-class ClassificationDataset(nn.Module):
+class ClassificationDataset(torch.utils.data.Dataset):
     """
         A general classification dataset that can be inherited. 
     """
@@ -42,7 +42,7 @@ class ClassificationDataset(nn.Module):
             seed: A seed to initialize the random number generator.
         '''
         super().__init__()
-        np.random.seed(seed)
+        rng = np.random.RandomState(seed)
         
         assert len(image_paths) == len(labels), "Please make sure the image_paths and labels are of equal length and correspond correctly!"
 
@@ -59,7 +59,7 @@ class ClassificationDataset(nn.Module):
             unique_classes = np.unique(self.labels)
             assert self.subset <= len(unique_classes), "Subset must be less than or equal to the number of classes!"
             
-            chosen_classes = np.random.choice(unique_classes, size=self.subset, replace=False)
+            chosen_classes = rng.choice(unique_classes, size=self.subset, replace=False)
             mask = np.isin(self.labels, chosen_classes)
             self.image_paths = self.image_paths[mask]
             self.labels = self.labels[mask]
@@ -73,7 +73,7 @@ class ClassificationDataset(nn.Module):
             assert 0 < self.train_split < 1, "Train split must be between 0 and 1!"
 
             indices = np.arange(0, len(self.labels))
-            np.random.shuffle(indices)
+            rng.shuffle(indices)
             
             split_index = int(len(indices) * self.train_split)
             
@@ -102,6 +102,12 @@ class ClassificationDataset(nn.Module):
         
         return image, label
 
+
+#############################################
+
+#    Face Recognition Datasets
+
+#############################################
 
 class SimpleFaceRecognitionDataset(ClassificationDataset):
     """
@@ -168,13 +174,13 @@ class CasiaWebFace_dataset(SimpleFaceRecognitionDataset):
 #############################################
 
 
-# Verification Datasets
+# Face Verification Datasets
 
 
 #############################################
 
 
-class VerificationDataset(nn.Module):
+class VerificationDataset(torch.utils.data.Dataset):
     """
         A general verification dataset that can be inherited. 
         These datasets will only be used for evaluation (no training).
@@ -197,7 +203,7 @@ class VerificationDataset(nn.Module):
             seed: A seed to initialize the random number generator.
         '''
         super().__init__()
-        np.random.seed(seed)
+        # The seed is passed to subclasses that may need it for shuffling.
         
         assert len(image_pairs) == len(labels), "Please make sure the image_pairs and labels are of equal length and correspond correctly!"
 
@@ -229,81 +235,59 @@ class VerificationDataset(nn.Module):
         return (image1, image2), label
 
 
-class CALFW_dataset(VerificationDataset):
-    
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+class _PairedTxtVerificationDataset(VerificationDataset):
+    """
+    Helper class for verification datasets that use a 'pairs_....txt' file
+    where each pair is on two consecutive lines. (Used with CALFW and CPLFW)
+    """
+    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None, shuffle=False, seed=100):
+        rng = np.random.RandomState(seed)
         self.image_pairs = []
         self.labels = []
         self.dataset_dir = dataset_dir
 
         # Read the pairs.txt file
-        pairs_file = os.path.join(dataset_dir, 'pairs_CALFW.txt')
-        with open(pairs_file, 'r') as f:
+        pairs_file = os.path.join(dataset_dir, pairs_filename)
+        with open(pairs_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        
-        for i in range(0, len(lines), 2): 
+
+        for i in range(0, len(lines), 2):
             image1, label1 = lines[i].split(' ')
             image2, label2 = lines[i+1].split(' ')
 
             assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
 
-            if eval(label1.strip()) > 0: # Same identity
-                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
-                self.labels.append(0)
-            else: # Different identity
-                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
-                self.labels.append(1)
+            label = 0 if eval(label1.strip()) > 0 else 1 # 0 for same, 1 for different
+            self.labels.append(label)
+            self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
 
         if shuffle:
             combined = list(zip(self.image_pairs, self.labels))
-            np.random.shuffle(combined)
+            rng.shuffle(combined)
             self.image_pairs[:], self.labels[:] = zip(*combined)
 
         super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
 
 
-class CPLFW_dataset(VerificationDataset):
-    
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
-        self.image_pairs = []
-        self.labels = []
-        self.dataset_dir = dataset_dir
+class CALFW_dataset(_PairedTxtVerificationDataset):
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
+        super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform, shuffle, seed)
 
-        # Read the pairs.txt file
-        pairs_file = os.path.join(dataset_dir, 'pairs_CPLFW.txt')
-        with open(pairs_file, 'r') as f:
-            lines = f.readlines()
-        
-        for i in range(0, len(lines), 2): 
-            image1, label1 = lines[i].split(' ')
-            image2, label2 = lines[i+1].split(' ')
-
-            assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
-
-            if eval(label1.strip()) > 0: # Same identity
-                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
-                self.labels.append(0)
-            else: # Different identity
-                self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
-                self.labels.append(1)
-
-        if shuffle:
-            combined = list(zip(self.image_pairs, self.labels))
-            np.random.shuffle(combined)
-            self.image_pairs[:], self.labels[:] = zip(*combined)
-
-        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+class CPLFW_dataset(_PairedTxtVerificationDataset):
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
+        super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform, shuffle, seed)
 
 
 class CFP_dataset(VerificationDataset):
     
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+        rng = np.random.RandomState(seed)
         self.image_pairs = []
         self.labels = []
         self.dataset_dir = dataset_dir
 
-        # Read the pairs.txt file
-        pairs_file = os.path.join(dataset_dir, 'labels.csv')
+        # Read the labels.csv file
+        pairs_file = os.path.join(dataset_dir, 'labels.csv') # Corrected path for standard CFP
         pairs_df = pd.read_csv(pairs_file)
 
         
@@ -318,7 +302,65 @@ class CFP_dataset(VerificationDataset):
 
         if shuffle:
             combined = list(zip(self.image_pairs, self.labels))
-            np.random.shuffle(combined)
+            rng.shuffle(combined)
             self.image_pairs[:], self.labels[:] = zip(*combined)
+
+        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+
+
+class LFW_dataset(VerificationDataset):
+    """
+    Loads the Labeled Faces in the Wild (LFW) dataset for face verification.
+    It parses the standard `pairs.txt` file to create image pairs.
+    
+    Shuffling this dataset is not allowed, because it would result int folds that are 
+    not comparable to SOTA work, so no shuffle argument is used.
+
+    The LFW dataset structure is assumed to be:
+    dataset_dir/
+        Person_A/
+            Person_A_0001.jpg
+            ...
+        Person_B/
+            Person_B_0001.jpg
+            ...
+    """
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None, pairs_file="pairs.csv", seed=100):
+        self.image_pairs = []
+        self.labels = []
+        self.dataset_dir = dataset_dir
+
+        pairs_path = os.path.join(self.dataset_dir, pairs_file)
+        pairs_df = pd.read_csv(pairs_path)
+
+        for i, row in pairs_df.iterrows():
+
+            if  pd.notna(row.iloc[3]): # a negative pair
+                person_name1 = row.iloc[0]
+                person_name2 = row.iloc[2]
+                image1 = row.iloc[1]
+                image2 = row.iloc[3]
+                self.labels.append(1)
+                self.image_pairs.append(
+                    (
+                        os.path.join("lfw-deepfunneled", person_name1, f"{person_name1}_{int(image1):04d}.jpg"),
+                        os.path.join("lfw-deepfunneled", person_name2, f"{person_name2}_{int(image2):04d}.jpg")
+                    )
+                )
+
+
+            
+            else: # a positive pair
+                person_name = row.iloc[0]
+                image1 = row.iloc[1]
+                image2 = row.iloc[2]
+
+                self.labels.append(0)
+                self.image_pairs.append(
+                    (
+                        os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image1):04d}.jpg"),
+                        os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image2):04d}.jpg")
+                    )
+                )
 
         super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
