@@ -374,6 +374,19 @@ class LFW_Dataset(VerificationDataset):
 #    Emotion Recognition Datasets
 
 #############################################
+"""
+
+    All emotion recognition will follow the same label format, which is:
+    0 ==> Angry
+    1 ==> Disgust
+    2 ==> Fear
+    3 ==> Happy
+    4 ==> Sad
+    5 ==> Surprise
+    6 ==> Neutral
+    
+"""
+
 
 class RAF_Dataset(ClassificationDataset):
     """
@@ -385,6 +398,19 @@ class RAF_Dataset(ClassificationDataset):
         self.dataset_dir = dataset_dir
         self.image_paths = []
         self.labels = []
+        
+        """
+            RAF_DB original label structure is:
+            1: Surprise  : 0
+            2: Fear      : 1
+            3: Disgust   : 2
+            4: Happiness : 3
+            5: Sadness   : 4
+            6: Anger     : 5
+            7: Neutral   : 6
+        """
+        self.label_translation = [5, 2, 1, 3, 4, 0, 6]
+
         rng = np.random.RandomState(seed)
 
         if RAF_subset == 'train': #if training
@@ -396,7 +422,8 @@ class RAF_Dataset(ClassificationDataset):
                 for line in lines:
                     image_name, label = line.split(' ')
                     self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
-                    self.labels.append(int(label) - 1) #labels should be from 0 to 6, not 1 to 7
+                    L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
+                    self.labels.append(self.label_translation[L]) #append translated label 
 
         else: #if testing
             label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_test_label.txt')
@@ -407,11 +434,119 @@ class RAF_Dataset(ClassificationDataset):
                 for line in lines:
                     image_name, label = line.split(' ')
                     self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
-                    self.labels.append(int(label) - 1) #labels should be from 0 to 6, not 1 to 7
+                    L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
+                    self.labels.append(self.label_translation[L]) #append translated label
         
         if shuffle:
             combined = list(zip(self.image_paths, self.labels))
             rng.shuffle(combined)
             self.image_paths[:], self.labels[:] = zip(*combined)
 
+        super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
+
+
+class ExpW_Dataset:
+    """
+    This class doesn't inherit from ClassificationDataset because it rewrites most of its functionality.
+
+    The images must be cropped before used in this dataset.
+
+    The __getitem__ method has to be overriden here.
+
+    The labels in this dataset don't have to be translated.
+    """
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed = 100, shuffle = False):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.image_paths = []
+        self.bboxes = []
+        self.labels = []
+        rng = np.random.RandomState(seed)
+
+        labels_file = os.path.join(dataset_dir, 'label.lst')
+        
+        with open(labels_file, 'r') as f:
+            lines = f.readlines()
+
+            for line in lines:
+                image_name, face_id_in_image, face_box_top, face_box_left, \
+                face_box_right, face_box_bottom, face_box_cofidence, expression_label = line.split(' ')
+
+                self.image_paths.append(os.path.join('origin', image_name))
+                self.bboxes.append(
+                    (
+                        int(face_box_top),
+                        int(face_box_left),
+                        int(face_box_bottom),
+                        int(face_box_right)
+                    )
+                )
+                self.labels.append(int(expression_label))
+        
+        if shuffle:
+            shuffle_indices = np.arange(len(self.labels))
+            rng.shuffle(shuffle_indices)
+            self.image_paths = [self.image_paths[i] for i in shuffle_indices]
+            self.bboxes = [self.bboxes[i] for i in shuffle_indices]
+            self.labels = [self.labels[i] for i in shuffle_indices]
+        
+
+    def __len__(self):
+        return len(self.labels)
+    
+
+    def __getitem__(self, idx):
+        image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
+        image = decode_image(image_path)
+        image = image[
+            :,
+            self.bboxes[idx][0]:self.bboxes[idx][2],
+            self.bboxes[idx][1]:self.bboxes[idx][3],
+        ]
+        label = self.labels[idx]
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            label = self.target_transform(label)
+        
+        return image, label
+
+class AffectNet_Dataset(ClassificationDataset):
+    
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
+        self.dataset_dir = dataset_dir
+        self.image_paths = []
+        self.labels = []
+
+        self.label_translation = {
+            'anger' : 0,
+            'disgust' : 1,
+            'fear' : 2,
+            'happy' : 3,
+            'sad' : 4,
+            'surprise' : 5,
+            'neutral' : 6
+        }
+
+        rng = np.random.RandomState(seed)
+
+        labels_file = os.path.join(dataset_dir, 'labels.csv')
+        labels_df = pd.read_csv(labels_file)
+
+        for i, row in labels_df.iterrows():
+            image_name = row.iloc[0]
+            label = row.iloc[1]
+            if label == 'contempt': #exclude contempt labels
+                continue
+
+            self.image_paths.append(image_name)
+            self.labels.append(self.label_translation[label])
+        
+        if shuffle:
+            combined = list(zip(self.image_paths, self.labels))
+            rng.shuffle(combined)
+            self.image_paths[:], self.labels[:] = zip(*combined)
+        
         super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
