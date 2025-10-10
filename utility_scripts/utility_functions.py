@@ -56,7 +56,7 @@ def resize_image_and_landmarks(image, landmarks, size = 112):
 
 
 def process_face_image_and_landmarks(image, landmarks, size = 112, padding = 1.25):
-    landmarks = np.array(landmarks)
+    landmarks = np.array(landmarks, dtype = np.float32)
 
     #Crop the image with padding
     image, landmarks = crop_face(image, landmarks, padding)
@@ -64,4 +64,4 @@ def process_face_image_and_landmarks(image, landmarks, size = 112, padding = 1.2
     #Resize the image
     image, landmarks = resize_image_and_landmarks(image, landmarks, size)
 
-    return image, landmarks
+    return torch.from_numpy(image).permute(2, 0, 1), torch.from_numpy(landmarks)
