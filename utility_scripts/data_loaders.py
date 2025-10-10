@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 import os
 import numpy as np
 import pandas as pd
-from torchvision.io import decode_image
+from torchvision.io import read_image
 
 
 #############################################
@@ -74,7 +74,9 @@ class ClassificationDataset(torch.utils.data.Dataset):
             assert 0 < self.train_split < 1, "Train split must be between 0 and 1!"
             assert self.subset == 'train' or self.subset == 'test', "Subset must be either 'train' or 'test'!"
 
-            indices = np.arange(0, len(self.labels))  
+            indices = np.arange(len(self.labels))
+            rng.shuffle(indices) # Shuffle indices to ensure a random split
+
             split_index = int(len(indices) * self.train_split)
             
             if self.subset == 'train':
@@ -92,7 +94,7 @@ class ClassificationDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
-        image = decode_image(image_path)
+        image = read_image(image_path)
         label = self.labels[idx]
 
         if self.image_transform:
@@ -124,14 +126,9 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
                 ...
             ...
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100, shuffle = False):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
         self.image_paths = []
         self.labels = []
-        self.dataset_dir = dataset_dir
-        self.subset = subset
-        self.train_split = train_split
-        self.seed = seed
-        rng = np.random.RandomState(self.seed) 
 
         # Sort the classes numerically if they are digits
         classes = os.listdir(dataset_dir)
@@ -151,30 +148,25 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
                 self.image_paths.append(os.path.join(dir, file)) # Use relative paths
                 self.labels.append(i)
         
-        if shuffle:
-            combined = list(zip(self.image_paths, self.labels))
-            rng.shuffle(combined)
-            self.image_paths[:], self.labels[:] = zip(*combined)
-        
-        super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset, train_split, seed)
+        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset, train_split, seed)
 
 
 # Specific datasets can inherit from SimpleFaceRecognitionDataset
 class VGGFace_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100, shuffle = False):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed, shuffle)
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
 class MS1MV2_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100, shuffle = False):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed, shuffle)
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
 class Glint360k_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100, shuffle = False):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed, shuffle)
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
 class CasiaWebFace_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100, shuffle = False):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed, shuffle)
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
 
 
 
@@ -229,8 +221,8 @@ class VerificationDataset(torch.utils.data.Dataset):
         image_path1 = os.path.join(self.dataset_dir, self.image_pairs[idx][0]) # Full path for image 1
         image_path2 = os.path.join(self.dataset_dir, self.image_pairs[idx][1]) # Full path for image 2
 
-        image1 = decode_image(image_path1)
-        image2 = decode_image(image_path2)
+        image1 = read_image(image_path1)
+        image2 = read_image(image_path2)
 
         label = self.labels[idx]
         
@@ -250,11 +242,9 @@ class _PairedTxtVerificationDataset(VerificationDataset):
     Helper class for verification datasets that use a 'pairs_....txt' file
     where each pair is on two consecutive lines. (Used with CALFW and CPLFW)
     """
-    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None, shuffle=False, seed=100):
-        rng = np.random.RandomState(seed)
+    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None):
         self.image_pairs = []
         self.labels = []
-        self.dataset_dir = dataset_dir
 
         # Read the pairs.txt file
         pairs_file = os.path.join(dataset_dir, pairs_filename)
@@ -271,31 +261,24 @@ class _PairedTxtVerificationDataset(VerificationDataset):
             self.labels.append(label)
             self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
 
-        if shuffle:
-            combined = list(zip(self.image_pairs, self.labels))
-            rng.shuffle(combined)
-            self.image_pairs[:], self.labels[:] = zip(*combined)
-
-        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
 
 
 class CALFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
-        super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform, shuffle, seed)
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None):
+        super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform)
 
 class CPLFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None, shuffle=False, seed=100):
-        super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform, shuffle, seed)
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None):
+        super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform)
 
 
 
 class CFP_Dataset(VerificationDataset):
     
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
-        rng = np.random.RandomState(seed)
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None):
         self.image_pairs = []
         self.labels = []
-        self.dataset_dir = dataset_dir
 
         # Read the labels.csv file
         pairs_file = os.path.join(dataset_dir, 'labels.csv') # Corrected path for standard CFP
@@ -309,14 +292,8 @@ class CFP_Dataset(VerificationDataset):
             
             self.image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
             self.labels.append(0 if label else 1) # append 0 if the label is true (0 represents zero distance for similar images) else append 1
-        
 
-        if shuffle:
-            combined = list(zip(self.image_pairs, self.labels))
-            rng.shuffle(combined)
-            self.image_pairs[:], self.labels[:] = zip(*combined)
-
-        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
 
 
 
@@ -337,10 +314,9 @@ class LFW_Dataset(VerificationDataset):
             Person_B_0001.jpg
             ...
     """
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None, pairs_file="pairs.csv", seed=100):
+    def __init__(self, dataset_dir, image_transform=None, target_transform=None, pairs_file="pairs.csv"):
         self.image_pairs = []
         self.labels = []
-        self.dataset_dir = dataset_dir
 
         pairs_path = os.path.join(self.dataset_dir, pairs_file)
         pairs_df = pd.read_csv(pairs_path)
@@ -373,7 +349,7 @@ class LFW_Dataset(VerificationDataset):
                     )
                 )
 
-        super().__init__(self.dataset_dir, self.image_pairs, self.labels, image_transform, target_transform, seed)
+        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
 
 
 #############################################
@@ -401,8 +377,7 @@ class RAF_Dataset(ClassificationDataset):
     RAF_subet: (str) can be either 'train' or 'test', and is used to choose the RAF train or test split.
                      it is different from the subset variable in the ClassificationDataset class. (sets it to None by default).
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, RAF_subset = 'train', seed = 100, shuffle = False):
-        self.dataset_dir = dataset_dir
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, RAF_subset = 'train', seed=100):
         self.image_paths = []
         self.labels = []
         
@@ -418,7 +393,6 @@ class RAF_Dataset(ClassificationDataset):
         """
         self.label_translation = [5, 2, 1, 3, 4, 0, 6]
 
-        rng = np.random.RandomState(seed)
 
         if RAF_subset == 'train': #if training
             label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_train_label.txt')
@@ -443,13 +417,8 @@ class RAF_Dataset(ClassificationDataset):
                     self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
                     L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
                     self.labels.append(self.label_translation[L]) #append translated label
-        
-        if shuffle:
-            combined = list(zip(self.image_paths, self.labels))
-            rng.shuffle(combined)
-            self.image_paths[:], self.labels[:] = zip(*combined)
 
-        super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
+        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 
@@ -463,15 +432,13 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
     The labels in this dataset don't have to be translated.
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed = 100, shuffle = False):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
         self.target_transform = target_transform
         self.image_paths = []
         self.bboxes = []
         self.labels = []
-        rng = np.random.RandomState(seed)
-        super.__init__()
 
         labels_file = os.path.join(dataset_dir, 'label.lst')
         
@@ -492,14 +459,8 @@ class ExpW_Dataset(torch.utils.data.Dataset):
                     )
                 )
                 self.labels.append(int(expression_label))
-        
-        if shuffle:
-            shuffle_indices = np.arange(len(self.labels))
-            rng.shuffle(shuffle_indices)
-            self.image_paths = [self.image_paths[i] for i in shuffle_indices]
-            self.bboxes = [self.bboxes[i] for i in shuffle_indices]
-            self.labels = [self.labels[i] for i in shuffle_indices]
-        
+        super().__init__()
+
 
     def __len__(self):
         return len(self.labels)
@@ -507,7 +468,7 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
-        image = decode_image(image_path)
+        image = read_image(image_path)
         image = image[
             :,
             self.bboxes[idx][0]:self.bboxes[idx][2],
@@ -526,8 +487,7 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
 class AffectNet_Dataset(ClassificationDataset):
     
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, shuffle = False, seed = 100):
-        self.dataset_dir = dataset_dir
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
         self.image_paths = []
         self.labels = []
 
@@ -541,8 +501,6 @@ class AffectNet_Dataset(ClassificationDataset):
             'neutral' : 6
         }
 
-        rng = np.random.RandomState(seed)
-
         labels_file = os.path.join(dataset_dir, 'labels.csv')
         labels_df = pd.read_csv(labels_file)
 
@@ -555,12 +513,7 @@ class AffectNet_Dataset(ClassificationDataset):
             self.image_paths.append(image_name)
             self.labels.append(self.label_translation[label])
         
-        if shuffle:
-            combined = list(zip(self.image_paths, self.labels))
-            rng.shuffle(combined)
-            self.image_paths[:], self.labels[:] = zip(*combined)
-        
-        super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
+        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 #############################################
@@ -570,17 +523,15 @@ class AffectNet_Dataset(ClassificationDataset):
 #############################################
 
 class W300_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed = 100, shuffle = False, subset = None, train_split = 0.7):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
         self.target_transform = target_transform
         self.image_paths = []
         self.landmarks = []
-        self.subset = subset
-        self.train_split = train_split
-        rng = np.random.RandomState(seed)
-        super.__init__()
 
+        rng = np.random.RandomState(seed)
+        
         #construct the image files as named in the directories
         indoor_image_files = [f"indoor_{i:03d}.png" for i in range(1, 301)]
         outdoor_image_files = [f"outdoor_{i:03d}.png" for i in range(1, 301)]
@@ -605,23 +556,25 @@ class W300_Dataset(torch.utils.data.Dataset):
         #combine outdoor and indoor paths
         self.image_paths = indoor_image_files + outdoor_image_files
 
-        if shuffle:
-            combined = list(zip(self.image_paths, self.landmarks))
-            rng.shuffle(combined)
-            self.image_paths[:], self.landmarks[:] = zip(*combined)
         
-
         if subset is not None:
             assert subset == 'train' or subset == 'test', "Subset must be either 'train' or 'test'!"
 
-            if subset == 'train':
-                self.image_paths = self.image_paths[:int(len(self.image_paths) * train_split)]
-                self.landmarks = self.landmarks[:int(len(self.landmarks) * train_split)]
-            else:
-                self.image_paths = self.image_paths[int(len(self.image_paths) * train_split):]
-                self.landmarks = self.landmarks[int(len(self.landmarks) * train_split):]
-        
+            indices = np.arange(len(self.image_paths))
+            rng.shuffle(indices)
 
+            split_idx = int(len(indices) * train_split)
+
+            if subset == 'train':
+                selected_indices = indices[:split_idx]
+            else:
+                selected_indices = indices[split_idx:]
+            
+            self.image_paths = [self.image_paths[i] for i in selected_indices]
+            self.landmarks = [self.landmarks[i] for i in selected_indices]
+
+        super().__init__()
+        
     def __len__(self):
         return len(self.landmarks)
 
@@ -642,7 +595,7 @@ class W300_Dataset(torch.utils.data.Dataset):
 
     
     def __getitem__(self, idx):
-        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[idx])) # Merge the complete path and decode
+        image = read_image(os.path.join(self.dataset_dir, self.image_paths[idx])) # Merge the complete path and decode
         landmarks = self.landmarks[idx]
 
         if self.image_transform:
@@ -655,6 +608,6 @@ class W300_Dataset(torch.utils.data.Dataset):
 
 
 class AFLW2000_Dataset:
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed = 100, shuffle = False):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
