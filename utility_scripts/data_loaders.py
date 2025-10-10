@@ -550,3 +550,73 @@ class AffectNet_Dataset(ClassificationDataset):
             self.image_paths[:], self.labels[:] = zip(*combined)
         
         super().__init__(self.dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed = seed)
+
+
+#############################################
+
+#   Landmark detection datasets
+
+#############################################
+
+class W300_Dataset:
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed = 100, shuffle = False):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.image_paths = []
+        self.landmarks = []
+
+        #construct the image files as named in the directories
+        indoor_image_files = [f"indoor_{i:03d}.png" for i in range(1, 301)]
+        outdoor_image_files = [f"outdoor_{i:03d}.png" for i in range(1, 301)]
+
+        # construct the landmarks
+        for image_file in indoor_image_files:
+            name = image_file.split('.')[0]
+            pts_file = os.path.join(self.dataset_dir, '01_Indoor', f"{name}.pts")
+            self.landmarks.append(self._process_points(pts_file))
+
+        for image_file in outdoor_image_files:
+            name = image_file.split('.')[0]
+            pts_file = os.path.join(self.dataset_dir, '02_Outdoor', f"{name}.pts")
+            self.landmarks.append(self._process_points(pts_file))   
+        
+
+        #Complete the indoor and outdoor image directories
+        indoor_image_files = [os.path.join('01_Indoor', name) for name in indoor_image_files]
+        outdoor_image_files = [os.path.join('02_Outdoor', name) for name in outdoor_image_files]
+
+
+        #combine outdoor and indoor paths
+        self.image_paths = indoor_image_files + outdoor_image_files
+        
+
+    def __len__(self):
+        return len(self.landmarks)
+
+
+    # a function that turns a pts file into a list of points
+    def _process_points(self, points):
+        landmarks = []
+
+        with open(points, 'r') as f:
+            lines = f.readlines()[3:-1] #only read the part of the file where the actual landmark coordinates exist
+
+            for line in lines:
+                x, y = line.split(' ')
+                landmarks.append((eval(x), eval(y)))
+
+
+        return landmarks
+
+    
+    def __getitem__(self, idx):
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[idx])) # Merge the complete path and decode
+        landmarks = self.landmarks[idx]
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            landmarks = self.target_transform(landmarks)
+        
+        return image, landmarks
