@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 from torchvision.io import read_image
-
+from utility_scripts.utility_functions import process_face_image_and_landmarks
 
 #############################################
 
@@ -127,8 +127,8 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
             ...
     """
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
-        self.image_paths = []
-        self.labels = []
+        image_paths = []
+        labels = []
 
         # Sort the classes numerically if they are digits
         classes = os.listdir(dataset_dir)
@@ -145,10 +145,10 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
             files = [str(f) + '.jpg' for f in int_files]
 
             for file in files:
-                self.image_paths.append(os.path.join(dir, file)) # Use relative paths
-                self.labels.append(i)
+                image_paths.append(os.path.join(dir, file)) # Use relative paths
+                labels.append(i)
         
-        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset, train_split, seed)
+        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset, train_split, seed)
 
 
 # Specific datasets can inherit from SimpleFaceRecognitionDataset
@@ -243,8 +243,8 @@ class _PairedTxtVerificationDataset(VerificationDataset):
     where each pair is on two consecutive lines. (Used with CALFW and CPLFW)
     """
     def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None):
-        self.image_pairs = []
-        self.labels = []
+        image_pairs = []
+        labels = []
 
         # Read the pairs.txt file
         pairs_file = os.path.join(dataset_dir, pairs_filename)
@@ -258,10 +258,10 @@ class _PairedTxtVerificationDataset(VerificationDataset):
             assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
 
             label = 0 if eval(label1.strip()) > 0 else 1 # 0 for same, 1 for different
-            self.labels.append(label)
-            self.image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+            labels.append(label)
+            image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
 
-        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
 
 
 class CALFW_Dataset(_PairedTxtVerificationDataset):
@@ -277,8 +277,8 @@ class CPLFW_Dataset(_PairedTxtVerificationDataset):
 class CFP_Dataset(VerificationDataset):
     
     def __init__(self, dataset_dir, image_transform = None, target_transform = None):
-        self.image_pairs = []
-        self.labels = []
+        image_pairs = []
+        labels = []
 
         # Read the labels.csv file
         pairs_file = os.path.join(dataset_dir, 'labels.csv') # Corrected path for standard CFP
@@ -290,10 +290,10 @@ class CFP_Dataset(VerificationDataset):
             image2 = row.iloc[1]
             label = row.iloc[2]
             
-            self.image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
-            self.labels.append(0 if label else 1) # append 0 if the label is true (0 represents zero distance for similar images) else append 1
+            image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
+            labels.append(0 if label else 1) # append 0 if the label is true (0 represents zero distance for similar images) else append 1
 
-        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
 
 
 
@@ -315,10 +315,10 @@ class LFW_Dataset(VerificationDataset):
             ...
     """
     def __init__(self, dataset_dir, image_transform=None, target_transform=None, pairs_file="pairs.csv"):
-        self.image_pairs = []
-        self.labels = []
+        image_pairs = []
+        labels = []
 
-        pairs_path = os.path.join(self.dataset_dir, pairs_file)
+        pairs_path = os.path.join(dataset_dir, pairs_file)
         pairs_df = pd.read_csv(pairs_path)
 
         for i, row in pairs_df.iterrows():
@@ -328,8 +328,8 @@ class LFW_Dataset(VerificationDataset):
                 person_name2 = row.iloc[2]
                 image1 = row.iloc[1]
                 image2 = row.iloc[3]
-                self.labels.append(1)
-                self.image_pairs.append(
+                labels.append(1)
+                image_pairs.append(
                     (
                         os.path.join("lfw-deepfunneled", person_name1, f"{person_name1}_{int(image1):04d}.jpg"),
                         os.path.join("lfw-deepfunneled", person_name2, f"{person_name2}_{int(image2):04d}.jpg")
@@ -341,15 +341,15 @@ class LFW_Dataset(VerificationDataset):
                 image1 = row.iloc[1]
                 image2 = row.iloc[2]
 
-                self.labels.append(0)
-                self.image_pairs.append(
+                labels.append(0)
+                image_pairs.append(
                     (
                         os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image1):04d}.jpg"),
                         os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image2):04d}.jpg")
                     )
                 )
 
-        super().__init__(dataset_dir, self.image_pairs, self.labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
 
 
 #############################################
@@ -378,8 +378,8 @@ class RAF_Dataset(ClassificationDataset):
                      it is different from the subset variable in the ClassificationDataset class. (sets it to None by default).
     """
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, RAF_subset = 'train', seed=100):
-        self.image_paths = []
-        self.labels = []
+        image_paths = []
+        labels = []
         
         """
             RAF_DB original label structure is:
@@ -402,9 +402,9 @@ class RAF_Dataset(ClassificationDataset):
 
                 for line in lines:
                     image_name, label = line.split(' ')
-                    self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
+                    image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
                     L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
-                    self.labels.append(self.label_translation[L]) #append translated label 
+                    labels.append(self.label_translation[L]) #append translated label 
 
         else: #if testing
             label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_test_label.txt')
@@ -414,11 +414,11 @@ class RAF_Dataset(ClassificationDataset):
                 
                 for line in lines:
                     image_name, label = line.split(' ')
-                    self.image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
+                    image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
                     L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
-                    self.labels.append(self.label_translation[L]) #append translated label
+                    labels.append(self.label_translation[L]) #append translated label
 
-        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
+        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 
@@ -433,12 +433,14 @@ class ExpW_Dataset(torch.utils.data.Dataset):
     The labels in this dataset don't have to be translated.
     """
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
+        super().__init__()
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
         self.target_transform = target_transform
-        self.image_paths = []
-        self.bboxes = []
-        self.labels = []
+        
+        image_paths = []
+        bboxes = []
+        labels = []
 
         labels_file = os.path.join(dataset_dir, 'label.lst')
         
@@ -449,8 +451,8 @@ class ExpW_Dataset(torch.utils.data.Dataset):
                 image_name, face_id_in_image, face_box_top, face_box_left, \
                 face_box_right, face_box_bottom, face_box_cofidence, expression_label = line.split(' ')
 
-                self.image_paths.append(os.path.join('origin', image_name))
-                self.bboxes.append(
+                image_paths.append(os.path.join('origin', image_name))
+                bboxes.append(
                     (
                         int(face_box_top),
                         int(face_box_left),
@@ -458,9 +460,11 @@ class ExpW_Dataset(torch.utils.data.Dataset):
                         int(face_box_right)
                     )
                 )
-                self.labels.append(int(expression_label))
-        super().__init__()
-
+                labels.append(int(expression_label))
+        
+        self.image_paths = np.array(image_paths)
+        self.bboxes = np.array(bboxes)
+        self.labels = np.array(labels)
 
     def __len__(self):
         return len(self.labels)
@@ -488,8 +492,8 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 class AffectNet_Dataset(ClassificationDataset):
     
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
-        self.image_paths = []
-        self.labels = []
+        image_paths = []
+        labels = []
 
         self.label_translation = {
             'anger' : 0,
@@ -510,10 +514,10 @@ class AffectNet_Dataset(ClassificationDataset):
             if label == 'contempt': #exclude contempt labels
                 continue
 
-            self.image_paths.append(image_name)
-            self.labels.append(self.label_translation[label])
+            image_paths.append(image_name)
+            labels.append(self.label_translation[label])
         
-        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
+        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 #############################################
@@ -523,13 +527,18 @@ class AffectNet_Dataset(ClassificationDataset):
 #############################################
 
 class W300_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
+        """
+            Padding and size are used for processing the image (cropping and resizing) along with its landmarks.
+        """
+        
+        super().__init__()
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
         self.target_transform = target_transform
-        self.image_paths = []
-        self.landmarks = []
-
+        landmarks = []
+        self.padding = padding
+        self.size = size
         rng = np.random.RandomState(seed)
         
         #construct the image files as named in the directories
@@ -540,12 +549,12 @@ class W300_Dataset(torch.utils.data.Dataset):
         for image_file in indoor_image_files:
             name = image_file.split('.')[0]
             pts_file = os.path.join(self.dataset_dir, '01_Indoor', f"{name}.pts")
-            self.landmarks.append(self._process_points(pts_file))
+            landmarks.append(self._process_points(pts_file))
 
         for image_file in outdoor_image_files:
             name = image_file.split('.')[0]
             pts_file = os.path.join(self.dataset_dir, '02_Outdoor', f"{name}.pts")
-            self.landmarks.append(self._process_points(pts_file))   
+            landmarks.append(self._process_points(pts_file))   
         
 
         #Complete the indoor and outdoor image directories
@@ -554,14 +563,14 @@ class W300_Dataset(torch.utils.data.Dataset):
 
 
         #combine outdoor and indoor paths
-        self.image_paths = indoor_image_files + outdoor_image_files
+        image_paths = indoor_image_files + outdoor_image_files
 
         
         if subset is not None:
             assert subset == 'train' or subset == 'test', "Subset must be either 'train' or 'test'!"
 
-            indices = np.arange(len(self.image_paths))
-            rng.shuffle(indices)
+            indices = np.arange(len(image_paths))
+            rng.shuffle(indices) #shuffle to ensure that the train/test split isn't always fixed.
 
             split_idx = int(len(indices) * train_split)
 
@@ -570,10 +579,11 @@ class W300_Dataset(torch.utils.data.Dataset):
             else:
                 selected_indices = indices[split_idx:]
             
-            self.image_paths = [self.image_paths[i] for i in selected_indices]
-            self.landmarks = [self.landmarks[i] for i in selected_indices]
-
-        super().__init__()
+            self.image_paths = np.array(image_paths)[selected_indices]
+            self.landmarks = np.array(landmarks, dtype=object)[selected_indices]
+        else:
+            self.image_paths = np.array(image_paths)
+            self.landmarks = np.array(landmarks, dtype=object)
         
     def __len__(self):
         return len(self.landmarks)
@@ -603,11 +613,11 @@ class W300_Dataset(torch.utils.data.Dataset):
         if self.target_transform:
             landmarks = self.target_transform(landmarks)
         
-        return image, landmarks
+        output_image, output_landmarks = process_face_image_and_landmarks(image.permute(1, 2, 0).numpy(), landmarks, self.size, self.padding)
+        return output_image, output_landmarks
 
 
 
 class AFLW2000_Dataset:
     def __init__(self, dataset_dir, image_transform = None, target_transform = None):
-        self.dataset_dir = dataset_dir
-        self.image_transform = image_transform
+        pass
