@@ -25,6 +25,11 @@ def get_bbox_from_landmarks(image, landmarks, padding = 1.25):
 def crop_face(image, landmarks, padding = 1.25):
     x, y, size = get_bbox_from_landmarks(image, landmarks, padding)
 
+    # make sure the crop doesn't go outside the limits of the image
+    x = max(0, x)
+    y = max(0, y)
+    size = min(size, image.shape[0] - y, image.shape[1] - x)
+    #crop the image
     cropped_image = image[y : y + size, x : x + size]
 
     #adjust the landmarks to match the cropping
