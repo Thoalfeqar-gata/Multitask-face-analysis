@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 import os
 import numpy as np
 import pandas as pd
-from torchvision.io import read_image
+from torchvision.io import decode_image
 from utility_scripts.utility_functions import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks
 
 #############################################
@@ -94,7 +94,7 @@ class ClassificationDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
-        image = read_image(image_path)
+        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
         label = self.labels[idx]
 
         if self.image_transform:
@@ -221,8 +221,8 @@ class VerificationDataset(torch.utils.data.Dataset):
         image_path1 = os.path.join(self.dataset_dir, self.image_pairs[idx][0]) # Full path for image 1
         image_path2 = os.path.join(self.dataset_dir, self.image_pairs[idx][1]) # Full path for image 2
 
-        image1 = read_image(image_path1)
-        image2 = read_image(image_path2)
+        image1 = decode_image(image_path1, mode = torchvision.io.image.ImageReadMode.RGB)
+        image2 = decode_image(image_path2, mode = torchvision.io.image.ImageReadMode.RGB)
 
         label = self.labels[idx]
         
@@ -472,7 +472,7 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
-        image = read_image(image_path)
+        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
         image = image[
             :,
             self.bboxes[idx][0]:self.bboxes[idx][2],
@@ -525,6 +525,12 @@ class AffectNet_Dataset(ClassificationDataset):
 #   Landmark detection datasets
 
 #############################################
+
+"""
+    To-Do:
+        Find a way to implement augmentations for the image and the landmarks.
+
+"""
 
 class W300_Dataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
@@ -604,7 +610,7 @@ class W300_Dataset(torch.utils.data.Dataset):
 
     
     def __getitem__(self, idx):
-        image = read_image(os.path.join(self.dataset_dir, self.image_paths[idx])) # Merge the complete path and decode
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[idx]), mode = torchvision.io.image.ImageReadMode.RGB) # Merge the complete path and decode
         landmarks = self.landmarks[idx]
 
         if self.image_transform:
@@ -633,14 +639,31 @@ class AFLW2000_Dataset(torch.utils.data.Dataset):
                 self.image_paths.append(file)
                 self.landmarks.append(get_2d_landmarks_from_aflw2000(os.path.join(self.dataset_dir, file.split('.')[0] + '.mat')))
         
+        if subset is not None:
+            assert subset == 'train' or subset == 'test', "Subset must be either 'train' or 'test'!"
+
+            indices = np.arange(len(self.image_paths))
+            rng = np.random.RandomState(seed)
+            indices = rng.shuffle(indices)
+            split_idx = int(len(indices) * train_split)
+
+            if subset == 'train':
+                selected_indices = indices[:split_idx]
+            else:
+                selected_indices = indices[split_idx:]
+            
+            self.image_paths = [self.image_paths[i] for i in selected_indices]
+            self.landmarks = [self.landmarks[i] for i in selected_indices]
+
         super().__init__()
     
+
     def __len__(self):
         return len(self.landmarks)
     
 
     def __getitem__(self, index):
-        image = read_image(os.path.join(self.dataset_dir, self.image_paths[index]))
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
         landmarks = self.landmarks[index]
 
         if self.image_transform:
@@ -650,4 +673,59 @@ class AFLW2000_Dataset(torch.utils.data.Dataset):
         
         output_image, output_landmarks = process_face_image_and_landmarks(image, landmarks, self.size, self.padding)
 
+
         return output_image, output_landmarks
+
+
+
+class COFW_Dataset(torch.utils.data.Dataset):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = 'train', seed=100, padding = 1.2, size = 112):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.padding = padding
+        self.size = size
+        self.image_paths = []
+        self.landmarks = []
+
+
+        assert subset == 'train' or subset == 'test', "Subset must be either 'train' or 'test'!"
+
+        if subset == 'train':
+            self.dataset_dir = os.path.join(self.dataset_dir, 'train')
+        else:
+            self.dataset_dir = os.path.join(self.dataset_dir, 'test')
+
+
+        for file in os.listdir(self.dataset_dir):
+            if file.endswith('.jpg'):
+                self.image_paths.append(file)
+                start = file.find('_')
+                end = file.find('.')
+                file_number = int(file[start+1:end])
+
+                excel_file = pd.read_excel(os.path.join(self.dataset_dir, f'pts{file_number}' + '.xlsx'))
+
+                self.landmarks.append(excel_file.to_numpy())
+        
+        super().__init__()
+    
+    def __len__(self):
+        return len(self.landmarks)
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
+        
+        landmarks = self.landmarks[index]
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            landmarks = self.target_transform(landmarks)
+
+        output_image, output_landmarks = process_face_image_and_landmarks(image, landmarks, size = self.size, padding = self.padding)
+
+        return output_image, output_landmarks
+
+
+
