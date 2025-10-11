@@ -89,15 +89,11 @@ def get_2d_landmarks_from_aflw2000(mat_path):
         np.ndarray: A NumPy array of shape (68, 2) containing the
             final 2D landmark coordinates.
     """
-    # 1. Load the .mat file
     mat_data = scipy.io.loadmat(mat_path)
     
-    # 2. Get the 3D point data
     pt3d_68 = mat_data['pt3d_68']
     
-    # 3. Extract the first two rows (X and Y coordinates)
     landmarks_2d = pt3d_68[:2, :]
     
-    # 4. Transpose the array to have the shape (68, 2)
-    return landmarks_2d.T
+    return landmarks_2d.T #(2, 68) => (68, 2)
 
