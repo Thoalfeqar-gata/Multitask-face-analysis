@@ -3,6 +3,13 @@ import cv2
 import os 
 import torch
 import torchvision
+import scipy
+
+##################################
+
+#   Landmark detection utilities
+
+##################################
 
 
 def get_bbox_from_landmarks(image, landmarks, padding = 1.25):
@@ -55,9 +62,9 @@ def resize_image_and_landmarks(image, landmarks, size = 112):
     return image, landmarks
 
 
-def process_face_image_and_landmarks(image, landmarks, size = 112, padding = 1.25):
+def process_face_image_and_landmarks(image: torch.Tensor, landmarks: list, size = 112, padding = 1.25):
     landmarks = np.array(landmarks, dtype = np.float32)
-
+    image = image.permute(1, 2, 0).numpy()
     #Crop the image with padding
     image, landmarks = crop_face(image, landmarks, padding)
     
@@ -65,3 +72,32 @@ def process_face_image_and_landmarks(image, landmarks, size = 112, padding = 1.2
     image, landmarks = resize_image_and_landmarks(image, landmarks, size)
 
     return torch.from_numpy(image).permute(2, 0, 1), torch.from_numpy(landmarks)
+
+
+def get_2d_landmarks_from_aflw2000(mat_path):
+    """
+    Extracts the 2D landmarks from an AFLW2000 .mat file.
+
+    According to the dataset's provided scripts, the X and Y coordinates
+    in the 'pt3d_68' variable are the final 2D landmarks. This function
+    simply loads the .mat file and extracts them.
+
+    Args:
+        mat_path (str): The file path to the .mat annotation file.
+
+    Returns:
+        np.ndarray: A NumPy array of shape (68, 2) containing the
+            final 2D landmark coordinates.
+    """
+    # 1. Load the .mat file
+    mat_data = scipy.io.loadmat(mat_path)
+    
+    # 2. Get the 3D point data
+    pt3d_68 = mat_data['pt3d_68']
+    
+    # 3. Extract the first two rows (X and Y coordinates)
+    landmarks_2d = pt3d_68[:2, :]
+    
+    # 4. Transpose the array to have the shape (68, 2)
+    return landmarks_2d.T
+
