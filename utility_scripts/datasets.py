@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from torchvision.io import decode_image
 from utility_scripts.utility_functions import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks
+import pathlib
 
 #############################################
 
@@ -644,7 +645,7 @@ class AFLW2000_Dataset(torch.utils.data.Dataset):
 
             indices = np.arange(len(self.image_paths))
             rng = np.random.RandomState(seed)
-            indices = rng.shuffle(indices)
+            rng.shuffle(indices)
             split_idx = int(len(indices) * train_split)
 
             if subset == 'train':
@@ -727,5 +728,68 @@ class COFW_Dataset(torch.utils.data.Dataset):
 
         return output_image, output_landmarks
 
+
+#############################################
+
+#   Face caption dataset
+
+#############################################
+
+class FaceCaption1M_Dataset(torch.utils.data.Dataset):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.image_paths = []
+        self.captions = []
+
+        data_splits = [f'split_{i:05d}' for i in range(32)]
+        
+        for split in data_splits:
+            json_file = pd.read_json(os.path.join(self.dataset_dir, 'json', f'{split}.json'))
+            for i, row in json_file.iterrows():
+                image_path = row['image']
+
+                if not pathlib.Path(os.path.join(self.dataset_dir, 'images', image_path)).is_file(): #some of the images exist in the json files but don't exist in the actual image data, so ignore them.
+                    continue
+
+                caption = row['image_short_caption']
+                self.image_paths.append(image_path)
+                self.captions.append(caption)
+
+        if subset is not None:
+            assert subset == 'train' or subset == 'test', "Subset must be either 'train' or 'test'!"
+
+            indices = np.arange(len(self.image_paths))
+            rng = np.random.RandomState(seed)
+            rng.shuffle(indices)
+            split_idx = int(len(indices) * train_split)
+
+            if subset == 'train':
+                selected_indices = indices[:split_idx]
+            else:
+                selected_indices = indices[split_idx:]
+
+            self.image_paths = [self.image_paths[i] for i in selected_indices]
+            self.captions = [self.captions[i] for i in selected_indices]
+        
+
+        super().__init__()
+
+
+    def __len__(self):
+        return len(self.captions)
+    
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, 'images', self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
+        caption = self.captions[index]
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            caption = self.target_transform(caption)
+
+        return image, caption
 
 
