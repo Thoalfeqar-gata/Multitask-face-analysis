@@ -793,3 +793,111 @@ class FaceCaption1M_Dataset(torch.utils.data.Dataset):
         return image, caption
 
 
+#############################################
+
+#   Attribute recognition
+
+#############################################
+
+class CelebA_Dataset(torch.utils.data.Dataset):
+    """
+        This dataset is already split into training, validation, and testing split, so no training split will be specified in the constructor.
+    """
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = 'train',  seed=100):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.image_paths = []
+        self.attributes = []
+        assert subset == 'train' or subset == 'test' or subset == 'validation', "Subset must be either 'train', 'validation', or test'!"
+
+
+        eval_file = pd.read_csv(os.path.join(self.dataset_dir, 'list_eval_partition.csv'))
+        attr_file = pd.read_csv(os.path.join(self.dataset_dir, 'list_attr_celeba.csv'))
+
+        if subset == 'train':
+            eval_file = eval_file[eval_file['partition'] == 0]
+        elif subset == 'validation':
+            eval_file = eval_file[eval_file['partition'] == 1]
+        else:
+            eval_file = eval_file[eval_file['partition'] == 2]
+
+
+        for i, row in eval_file.iterrows():
+            image_path = row['image_id']
+            self.image_paths.append(image_path)
+            attr_row = attr_file.iloc[i]
+            attributes = attr_row.to_numpy()[1:]
+            attributes[attributes == -1] = 0 #convert -1 to 0
+            attributes = attributes.astype(np.uint8)
+            self.attributes.append(attributes)
+            
+                
+        super().__init__()
+    
+    def __len__(self):
+        return len(self.attributes)
+    
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, 'img_align_celeba', self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
+        attributes = self.attributes[index]
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            attributes = self.target_transform(attributes)
+        
+        return image, attributes
+
+
+#############################################
+
+#   Pose estimation
+
+#############################################
+
+"""
+    Implement here
+"""
+
+
+#############################################
+
+#   Face parsing
+
+#############################################
+
+"""
+    Implement here
+"""
+
+#############################################
+
+#   Age estimation
+
+#############################################
+
+"""
+    Implement here
+"""
+
+#############################################
+
+#   Gender recognition
+
+#############################################
+
+"""
+    Implement here
+"""
+
+#############################################
+
+#   Race/Ethnicity recognition
+
+#############################################
+
+"""
+    Implement here
+"""
