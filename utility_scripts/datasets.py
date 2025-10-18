@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 from torchvision.io import decode_image
-from utility_scripts.utility_functions import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks
+from utility_scripts.utility_functions import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks, mat_to_rotation_matrix
 import pathlib
 
 #############################################
@@ -201,8 +201,6 @@ class VerificationDataset(torch.utils.data.Dataset):
             image_transform: (transform) The transform to be applied to the images.
 
             target_transform: (transform) The transform to be applied to the target (labels).
-
-            seed: A seed to initialize the random number generator.
         '''
         super().__init__()
         # The seed is passed to subclasses that may need it for shuffling.
@@ -233,7 +231,6 @@ class VerificationDataset(torch.utils.data.Dataset):
             image2 = self.image_transform(image2)
         if self.target_transform:
             label = self.target_transform(label)
-        
         return (image1, image2), label
 
 
@@ -242,8 +239,11 @@ class _PairedTxtVerificationDataset(VerificationDataset):
     """
     Helper class for verification datasets that use a 'pairs_....txt' file
     where each pair is on two consecutive lines. (Used with CALFW and CPLFW)
+
+    These datasets' labels are ordered such that all the positive pairs appear first, then the negative pairs, which
+    requires shuffling them.
     """
-    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None):
+    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None, seed = 100):
         image_pairs = []
         labels = []
 
@@ -258,19 +258,26 @@ class _PairedTxtVerificationDataset(VerificationDataset):
 
             assert label1.strip() == label2.strip(), "Labels do not match in pairs file!"
 
-            label = 0 if eval(label1.strip()) > 0 else 1 # 0 for same, 1 for different
+            label = 1 if eval(label1.strip()) > 0 else 0 # 1 for same, 0 for different
             labels.append(label)
             image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+        rng = np.random.RandomState(seed)
+        
+        #shuffle the data to mix positive and negative labels
+        combined = list(zip(image_pairs, labels))
+        rng.shuffle(combined)
+        image_pairs, labels = zip(*combined)
 
+        
         super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
 
 
 class CALFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'calfw'), image_transform=None, target_transform=None):
         super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform)
 
 class CPLFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None):
+    def __init__(self, dataset_dir  = os.path.join('data', 'datasets', 'face recognition', 'cplfw'), image_transform=None, target_transform=None):
         super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform)
 
 
@@ -292,10 +299,18 @@ class CFP_Dataset(VerificationDataset):
             label = row.iloc[2]
             
             image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
-            labels.append(0 if label else 1) # append 0 if the label is true (0 represents zero distance for similar images) else append 1
+            labels.append(1 if label else 0) # append 1 if the label is true (1 represents zero distance for similar images) else append 0
 
         super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
 
+
+class CFPFP_Dataset(CFP_Dataset):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_fp'), image_transform = None, target_transform = None):
+        super().__init__(dataset_dir, image_transform, target_transform)
+
+class CFPFF_Dataset(CFP_Dataset):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_ff'), image_transform = None, target_transform = None):
+        super().__init__(dataset_dir, image_transform, target_transform)
 
 
 class LFW_Dataset(VerificationDataset):
@@ -315,7 +330,7 @@ class LFW_Dataset(VerificationDataset):
             Person_B_0001.jpg
             ...
     """
-    def __init__(self, dataset_dir, image_transform=None, target_transform=None, pairs_file="pairs.csv"):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'LFW'), image_transform=None, target_transform=None, pairs_file="pairs.csv"):
         image_pairs = []
         labels = []
 
@@ -329,7 +344,7 @@ class LFW_Dataset(VerificationDataset):
                 person_name2 = row.iloc[2]
                 image1 = row.iloc[1]
                 image2 = row.iloc[3]
-                labels.append(1)
+                labels.append(0)
                 image_pairs.append(
                     (
                         os.path.join("lfw-deepfunneled", person_name1, f"{person_name1}_{int(image1):04d}.jpg"),
@@ -342,7 +357,7 @@ class LFW_Dataset(VerificationDataset):
                 image1 = row.iloc[1]
                 image2 = row.iloc[2]
 
-                labels.append(0)
+                labels.append(1)
                 image_pairs.append(
                     (
                         os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image1):04d}.jpg"),
@@ -857,10 +872,44 @@ class CelebA_Dataset(torch.utils.data.Dataset):
 
 #############################################
 
-"""
-    Implement here
-"""
+class W300LP_Dataset(torch.utils.data.Dataset):
+    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.image_paths = []
+        self.pose_paths = []
+        
+        # Load all the subdirectories of 300W-LP dataset except the "Code" directory since it doesn't have any data
+        self.dirs = [directory for directory in os.listdir(self.dataset_dir) if directory != 'Code']
 
+        for directory in self.dirs:
+            image_dir = os.path.join(self.dataset_dir, directory)
+
+            for file in os.listdir(image_dir):
+                if file.endswith('.jpg'):
+
+                    # Don't join the full paths here to save up on RAM
+                    self.image_paths.append(os.path.join(directory, file)) 
+                    self.pose_paths.append(os.path.join(directory, file.split('.')[0] + '.mat'))
+    
+        super().__init__()
+
+
+    def __len__(self):
+        return len(self.image_paths)
+    
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
+        pose = mat_to_rotation_matrix(os.path.join(self.dataset_dir, self.pose_paths[index]))
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        if self.target_transform:
+            pose = self.target_transform(pose)
+        
+        return image, pose
 
 #############################################
 
