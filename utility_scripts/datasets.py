@@ -6,7 +6,8 @@ import os
 import numpy as np
 import pandas as pd
 from torchvision.io import decode_image
-from utility_scripts.utility_functions import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks, mat_to_rotation_matrix
+from utility_scripts.landmark_utilities import get_2d_landmarks_from_aflw2000, process_face_image_and_landmarks
+from utility_scripts.pose_estimation_utilities import mat_to_rotation_matrix
 import pathlib
 
 #############################################
@@ -260,7 +261,7 @@ class _PairedTxtVerificationDataset(VerificationDataset):
 
             label = 1 if eval(label1.strip()) > 0 else 0 # 1 for same, 0 for different
             labels.append(label)
-            image_pairs.append((os.path.join('aligned images', image1.strip()), os.path.join('aligned images', image2.strip())))
+            image_pairs.append((os.path.join('processed images', image1.strip()), os.path.join('processed images', image2.strip())))
         rng = np.random.RandomState(seed)
         
         #shuffle the data to mix positive and negative labels
@@ -347,8 +348,8 @@ class LFW_Dataset(VerificationDataset):
                 labels.append(0)
                 image_pairs.append(
                     (
-                        os.path.join("lfw-deepfunneled", person_name1, f"{person_name1}_{int(image1):04d}.jpg"),
-                        os.path.join("lfw-deepfunneled", person_name2, f"{person_name2}_{int(image2):04d}.jpg")
+                        os.path.join("processed images", person_name1, f"{person_name1}_{int(image1):04d}.jpg"),
+                        os.path.join("processed images", person_name2, f"{person_name2}_{int(image2):04d}.jpg")
                     )
                 )
 
@@ -360,8 +361,8 @@ class LFW_Dataset(VerificationDataset):
                 labels.append(1)
                 image_pairs.append(
                     (
-                        os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image1):04d}.jpg"),
-                        os.path.join("lfw-deepfunneled", person_name, f"{person_name}_{int(image2):04d}.jpg")
+                        os.path.join("processed images", person_name, f"{person_name}_{int(image1):04d}.jpg"),
+                        os.path.join("processed images", person_name, f"{person_name}_{int(image2):04d}.jpg")
                     )
                 )
 
