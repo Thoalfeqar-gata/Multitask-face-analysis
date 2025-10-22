@@ -72,7 +72,6 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
                                                  datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'],
                                                  use_tta = True,
                                                  batch_size = 512,
-                                                 preprocess = True,
                                                  use_gpu = True):
     """
     Computes squared L2 distance scores for image pairs from specified face recognition datasets.
