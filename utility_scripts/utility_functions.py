@@ -4,163 +4,13 @@ import os
 import torch
 import torchvision
 import scipy
+from torchvision.transforms import v2
+import torch.nn.functional as F
 from utility_scripts import datasets
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
-import torch.nn.functional as F
 
 
-
-
-
-
-##################################
-
-#   Landmark detection utilities
-
-##################################
-
-
-def get_bbox_from_landmarks(image, landmarks, padding = 1.25):
-    """
-    Calculate a square bounding box from the given landmarks with padding.
-
-    This function determines the minimum and maximum coordinates of the landmarks
-    to find the extent of the face, then creates a square bounding box centered
-    around the face with a specified padding factor.
-
-    Args:
-        image (np.ndarray): The image containing the face (used for context, not direct processing).
-        landmarks (np.ndarray): A NumPy array of shape (N, 2) that stores the landmark coordinates.
-        padding (float, optional): The factor to expand the bounding box. Defaults to 1.25.
-
-    Returns:
-        tuple: A tuple (x, y, size) representing the top-left corner and the size of the square bounding box.
-    """
-    # Find the min and max coordinates of the landmarks to define the initial bounding box
-    min_x, min_y = np.min(landmarks[:, 0]), np.min(landmarks[:, 1])
-    max_x, max_y = np.max(landmarks[:, 0]), np.max(landmarks[:, 1])
-
-    # Calculate the width and height of the face
-    face_width = max_x - min_x
-    face_height = max_y - min_y
-
-    # Determine the size of the square bounding box by taking the larger dimension and applying padding
-    face_size = max(face_width, face_height) * padding
-    # Find the center of the face
-    center_x, center_y = (min_x + max_x) / 2, (min_y + max_y) / 2
-
-    # Calculate the top-left corner of the square bounding box
-    return int(center_x - face_size / 2), int(center_y - face_size / 2), int(face_size)
-
-
-def crop_face(image, landmarks, padding = 1.25):
-    """
-    Crops the face from an image based on landmarks and adjusts the landmarks accordingly.
-
-    Args:
-        image (np.ndarray): The input image.
-        landmarks (np.ndarray): The facial landmarks.
-        padding (float, optional): Padding for the bounding box. Defaults to 1.25.
-
-    Returns:
-        tuple: A tuple containing the cropped image (np.ndarray) and the adjusted landmarks (np.ndarray).
-    """
-    # Get the square bounding box for the face
-    x, y, size = get_bbox_from_landmarks(image, landmarks, padding)
-
-    # Ensure the crop coordinates do not go outside the image boundaries
-    x = max(0, x)
-    y = max(0, y)
-    size = min(size, image.shape[0] - y, image.shape[1] - x)
-    
-    # Crop the image using the calculated bounding box
-    cropped_image = image[y : y + size, x : x + size]
-
-    # Adjust the landmark coordinates to be relative to the new cropped image
-    for i in range(len(landmarks)):
-        landmarks[i][0] -= x
-        landmarks[i][1] -= y
-
-    return cropped_image, landmarks
-
-
-def resize_image_and_landmarks(image, landmarks, size = 112):
-    """
-    Resizes an image to a target size and scales the landmarks accordingly.
-
-    Args:
-        image (np.ndarray): The input image.
-        landmarks (np.ndarray): The facial landmarks.
-        size (int, optional): The target size for the height and width of the image. Defaults to 112.
-
-    Returns:
-        tuple: A tuple containing the resized image (np.ndarray) and the scaled landmarks (np.ndarray).
-    """
-    # Get the original height and width
-    h, w = image.shape[:2]
-    # Calculate the scaling factor
-    scale = size / h
-    # Resize the image using cubic interpolation for better quality
-    image = cv2.resize(image, (size, size), interpolation = cv2.INTER_CUBIC)
-
-    # Scale the landmarks to match the new image size
-    for i in range(len(landmarks)):
-        landmarks[i][0] *= scale
-        landmarks[i][1] *= scale
-
-    return image, landmarks
-
-
-def process_face_image_and_landmarks(image: torch.Tensor, landmarks: list, size = 112, padding = 1.25):
-    """
-    A processing pipeline to crop and resize a face image and its landmarks.
-
-    Args:
-        image (torch.Tensor): The input image as a PyTorch tensor.
-        landmarks (list): A list of landmark coordinates.
-        size (int, optional): The final desired size of the image. Defaults to 112.
-        padding (float, optional): The padding to use when cropping the face. Defaults to 1.25.
-
-    Returns:
-        tuple: A tuple that contains the processed image tensor and processed landmarks tensor.
-    """
-    # Convert inputs to NumPy arrays for processing with OpenCV and NumPy
-    landmarks = np.array(landmarks, dtype = np.float32)
-    image = image.permute(1, 2, 0).numpy()
-    
-    # Crop the image with padding around the landmarks
-    image, landmarks = crop_face(image, landmarks, padding)
-    
-    # Resize the image and landmarks to the target size
-    image, landmarks = resize_image_and_landmarks(image, landmarks, size)
-
-    # Convert the processed NumPy arrays back to PyTorch tensors
-    return torch.from_numpy(image).permute(2, 0, 1), torch.from_numpy(landmarks)
-
-
-def get_2d_landmarks_from_aflw2000(mat_path):
-    """
-    Extracts the 2D landmarks from an AFLW2000 .mat file.
-
-    According to the dataset's provided scripts, the X and Y coordinates
-    in the 'pt3d_68' variable are the final 2D landmarks. This function
-    simply loads the .mat file and extracts them.
-
-    Args:
-        mat_path (str): The file path to the .mat annotation file.
-
-    Returns:
-        np.ndarray: A NumPy array of shape (68, 2) containing the
-            final 2D landmark coordinates.
-    """
-    mat_data = scipy.io.loadmat(mat_path)
-    
-    pt3d_68 = mat_data['pt3d_68']
-    
-    landmarks_2d = pt3d_68[:2, :]
-    
-    return landmarks_2d.T #(2, 68) => (68, 2)
 
 
 ##################################
@@ -221,7 +71,9 @@ def evaluate_backbone(backbone):
 def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
                                                  datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'],
                                                  use_tta = True,
-                                                 batch_size = 512):
+                                                 batch_size = 512,
+                                                 preprocess = True,
+                                                 use_gpu = True):
     """
     Computes squared L2 distance scores for image pairs from specified face recognition datasets.
 
@@ -235,6 +87,8 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
         use_tta (bool, optional): If True, averages embeddings from original and horizontally flipped images.
             Defaults to True.
         batch_size (int, optional): Batch size for processing images. Defaults to 512.
+        preprocess (bool): Whether to apply preprocessing on the images. Defaults to True.
+        use_gpu (bool): Whether to use GPU for processing. Defaults to True.
 
 
     Returns:
@@ -242,14 +96,14 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
               (distances, labels), where 'distances' is a NumPy array of squared L2
               distances and 'labels' is a NumPy array of ground-truth labels (1=same, 0=different).
     """
-    backbone.to('cuda')
+    if use_gpu:
+        backbone.to('cuda')
     backbone.eval()
 
-    image_transform = torchvision.transforms.v2.Compose([
-        torchvision.transforms.v2.Resize((112, 112)),
-        torchvision.transforms.v2.ToImage(),
-        torchvision.transforms.v2.ToDtype(torch.float32, scale = True),
-        torchvision.transforms.v2.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5])
+    image_transform = v2.Compose([
+        v2.ToImage(), 
+        v2.ToDtype(torch.float32, scale=True), # To [0, 1]
+        v2.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5]) # To [-1, 1]
     ])
 
     test_datasets_map = {
@@ -285,22 +139,21 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
 
         with torch.no_grad():
             for (image1_batch, image2_batch), label_batch in loader:
-                image1_batch = image1_batch.to('cuda', non_blocking=True)
-                image2_batch = image2_batch.to('cuda', non_blocking=True)
+                image1_batch = torch.flip(image1_batch, dims = [1])
+                image2_batch = torch.flip(image2_batch, dims = [1])
+                
+                if use_gpu:
+                    image1_batch = image1_batch.to('cuda', non_blocking=True)
+                    image2_batch = image2_batch.to('cuda', non_blocking=True)
 
                 if use_tta:
                     image1_flipped = torch.flip(image1_batch, dims=[3])
                     image2_flipped = torch.flip(image2_batch, dims=[3])
 
-                    embeddings1_original = backbone(image1_batch)
-                    embeddings2_original = backbone(image2_batch)
-                    embeddings1_flipped = backbone(image1_flipped)
-                    embeddings2_flipped = backbone(image2_flipped)
-
-                    embeddings1_original = F.normalize(embeddings1_original, p=2, dim=1)
-                    embeddings2_original = F.normalize(embeddings2_original, p=2, dim=1)
-                    embeddings1_flipped = F.normalize(embeddings1_flipped, p=2, dim=1)
-                    embeddings2_flipped = F.normalize(embeddings2_flipped, p=2, dim=1)
+                    embeddings1_original, norm1_original = backbone(image1_batch)
+                    embeddings2_original, norm2_original = backbone(image2_batch)
+                    embeddings1_flipped, norm1_flipped = backbone(image1_flipped)
+                    embeddings2_flipped, norm2_flipped = backbone(image2_flipped)
 
                     embeddings1 = (embeddings1_original + embeddings1_flipped) / 2.0
                     embeddings2 = (embeddings2_original + embeddings2_flipped) / 2.0
@@ -309,11 +162,8 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
                     embeddings2 = embeddings2.cpu().numpy()
 
                 else: # No TTA
-                    embeddings1 = backbone(image1_batch)
-                    embeddings2 = backbone(image2_batch)
-
-                    embeddings1 = F.normalize(embeddings1, p=2, dim=1).cpu().numpy()
-                    embeddings2 = F.normalize(embeddings2, p=2, dim=1).cpu().numpy()
+                    embeddings1, norm1 = backbone(image1_batch)
+                    embeddings2, norm2 = backbone(image2_batch)
 
                 diff = embeddings1 - embeddings2
                 dist = np.sum(np.square(diff), axis=1)
