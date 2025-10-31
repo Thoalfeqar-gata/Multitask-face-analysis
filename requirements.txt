@@ -1,0 +1,7 @@
+torch
+torchvision
+pytorch-lightning
+numpy
+pandas
+scikit-learn
+tensorboard
