@@ -8,7 +8,7 @@ from torch.nn import Module, Parameter
 
 def build_head(head_type,
                embedding_size,
-               class_num,
+               classnum,
                m,
                t_alpha,
                h,
@@ -17,7 +17,7 @@ def build_head(head_type,
 
     if head_type == 'adaface':
         head = AdaFace(embedding_size=embedding_size,
-                       classnum=class_num,
+                       classnum=classnum,
                        m=m,
                        h=h,
                        s=s,
@@ -25,13 +25,13 @@ def build_head(head_type,
                        )
     elif head_type == 'arcface':
         head = ArcFace(embedding_size=embedding_size,
-                       classnum=class_num,
+                       classnum=classnum,
                        m=m,
                        s=s,
                        )
     elif head_type == 'cosface':
         head = CosFace(embedding_size=embedding_size,
-                       classnum=class_num,
+                       classnum=classnum,
                        m=m,
                        s=s,
                        )
@@ -43,6 +43,7 @@ def l2_norm(input,axis=1):
     norm = torch.norm(input,2,axis,True)
     output = torch.div(input, norm)
     return output
+
 
 
 class AdaFace(Module):
@@ -59,7 +60,7 @@ class AdaFace(Module):
         self.kernel = Parameter(torch.Tensor(embedding_size,classnum))
 
         # initial kernel
-        nn.init.xavier_uniform_(self.kernel)
+        self.kernel.data.uniform_(-1, 1).renorm_(2,1,1e-5).mul_(1e5)
         self.m = m 
         self.eps = 1e-3
         self.h = h
@@ -71,14 +72,14 @@ class AdaFace(Module):
         self.register_buffer('batch_mean', torch.ones(1)*(20))
         self.register_buffer('batch_std', torch.ones(1)*100)
 
-        print('\n\AdaFace with the following property')
+        print('\nAdaFace with the following property')
         print('self.m', self.m)
         print('self.h', self.h)
         print('self.s', self.s)
         print('self.t_alpha', self.t_alpha)
 
     def forward(self, embbedings, norms, label):
-        
+
         kernel_norm = l2_norm(self.kernel,axis=0)
         cosine = torch.mm(embbedings,kernel_norm)
         cosine = cosine.clamp(-1+self.eps, 1-self.eps) # for stability
@@ -129,7 +130,7 @@ class CosFace(nn.Module):
         self.classnum = classnum
         self.kernel = Parameter(torch.Tensor(embedding_size,classnum))
         # initial kernel
-        nn.init.xavier_uniform_(self.kernel)
+        self.kernel.data.uniform_(-1, 1).renorm_(2,1,1e-5).mul_(1e5)
         self.m = m  # the margin value, default is 0.4
         self.s = s  # scalar value default is 64, see normface https://arxiv.org/abs/1704.06369
         self.eps = 1e-4
@@ -159,7 +160,7 @@ class ArcFace(Module):
         self.classnum = classnum
         self.kernel = Parameter(torch.Tensor(embedding_size,classnum))
         # initial kernel
-        nn.init.xavier_uniform_(self.kernel)
+        self.kernel.data.uniform_(-1, 1).renorm_(2,1,1e-5).mul_(1e5)
         self.m = m # the margin value, default is 0.5
         self.s = s # scalar value default is 64, see normface https://arxiv.org/abs/1704.06369
 
