@@ -1,22 +1,24 @@
 python pretrain.py \
-    --backbone_name swin_v2_t \
+    --backbone_name ir_se_18 \
+    --pretrained 0 \
     --head_name adaface \
     --embedding_dim 512 \
     --margin 0.4 \
     --scale 64 \
     --optimizer adamw \
-    --learning_rate 5e-4 \
-    --start_factor 1e-3 \
+    --learning_rate 1e-3 \
+    --start_factor 1e-1 \
     --min_lr 5e-6 \
     --weight_decay 0.05 \
     --scheduler cosine \
-    --max_epochs 60 \
+    --max_epochs 40 \
     --warmup_epochs 5 \
     --batch_size 512 \
     --precision 16-mixed \
-    --dataset_name VGGFace_Dataset \
+    --dataset_name MS1MV2_Dataset \
+    --min_num_images_per_class 20 \
     --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
     --num_workers 8 \
-    --crop_prob 0.1 \
-    --low_res_prop 0.1 \
-    --photometric_prop 0.1
+    --crop_prob 0.2 \
+    --low_res_prop 0.2 \
+    --photometric_prop 0.2

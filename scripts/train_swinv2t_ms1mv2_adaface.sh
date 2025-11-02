@@ -1,9 +1,11 @@
 python pretrain.py \
-    --backbone_name swin_v2_b \
+    --backbone_name swin_v2_t \
+    --pretrained 0 \
     --head_name adaface \
     --embedding_dim 512 \
     --margin 0.4 \
     --scale 64 \
+    --t_alpha 0.99 \
     --optimizer adamw \
     --learning_rate 1e-3 \
     --start_factor 1e-1 \
@@ -14,10 +16,10 @@ python pretrain.py \
     --warmup_epochs 5 \
     --batch_size 512 \
     --precision 16-mixed \
-    --dataset_name Glint360k_Dataset \
+    --dataset_name MS1MV2 \
     --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
-    --num_workers 8 \
     --min_num_images_per_class 20 \
-    --crop_prob 0.1 \
-    --low_res_prop 0.1 \
-    --photometric_prop 0.1
+    --num_workers 8 \
+    --crop_prob 0.2 \
+    --low_res_prop 0.2 \
+    --photometric_prop 0.2
