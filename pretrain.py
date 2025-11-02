@@ -9,7 +9,7 @@ from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmenter import Augmenter
 
-import backbones
+import backbones.backbones as backbones
 import datasets
 import losses
 import eval
@@ -29,6 +29,7 @@ class FaceRecognitionModel(pl.LightningModule):
         """
         super().__init__()
         self.backbone_name = kwargs.get('backbone_name')
+        self.pretrained = kwargs.get('pretrained')
         self.head_name = kwargs.get('head_name')
         self.embedding_dim = kwargs.get('embedding_dim')
         self.num_classes = kwargs.get('num_classes')
@@ -51,7 +52,8 @@ class FaceRecognitionModel(pl.LightningModule):
         # Instantiate the backbone
         self.backbone = backbones.get_backbone(
             backbone_name=self.backbone_name,
-            embedding_dim=self.embedding_dim
+            embedding_dim=self.embedding_dim,
+            pretrained = bool(self.pretrained)
         )
 
         # Instantiate the head
@@ -202,6 +204,7 @@ class FaceRecognitionDataModule(pl.LightningDataModule):
         super().__init__()
         self.dataset_name = kwargs.get('dataset_name')
         self.val_datasets = kwargs.get('val_datasets')
+        self.min_num_image_per_class = kwargs.get('min_num_images_per_class')
         self.batch_size = kwargs.get('batch_size')
         self.num_workers = kwargs.get('num_workers')
         self.train_transform = kwargs.get('train_transform')
@@ -215,6 +218,7 @@ class FaceRecognitionDataModule(pl.LightningDataModule):
         # Training dataset
         dataset_class = getattr(datasets, self.dataset_name)
         self.train_dataset = dataset_class(image_transform=self.train_transform)
+        self.train_dataset.discard_classes(self.min_num_image_per_class)
         self.num_classes = len(torch.unique(torch.tensor(self.train_dataset.labels)))
         
         # Validation datasets
@@ -296,7 +300,7 @@ def main(args):
         check_val_every_n_epoch=1,
     )
 
-    trainer.fit(model, data_module)
+    trainer.fit(model, data_module, ckpt_path=args.resume_from_checkpoint)
 
 
 if __name__ == '__main__':
@@ -304,6 +308,7 @@ if __name__ == '__main__':
     
     # Model Hyperparameters
     parser.add_argument('--backbone_name', type=str, default='ResNet', help='Backbone model name')
+    parser.add_argument('--pretrained', type = int, default = 0, help='Use pretrained weights 0 = False, 1 = True')
     parser.add_argument('--head_name', type=str, default='arcface', help='Head name (e.g., arcface, cosface, adaface)')
     parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
     parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer name (can be either adamw or sgd)')
@@ -319,7 +324,7 @@ if __name__ == '__main__':
     parser.add_argument('--t_alpha', type=float, default=1.0, help='t_alpha parameter for AdaFace loss')
 
     # Training Hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Initial learning rate')
+    parser.add_argument('--learning_rate', type=float, default=5e-4, help='Initial learning rate')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
     parser.add_argument('--max_epochs', type=int, default=40, help='Number of training epochs')
     parser.add_argument('--precision', type=str, default = '16-mixed', help='Use mixed precision training')
@@ -327,6 +332,7 @@ if __name__ == '__main__':
     # Data
     parser.add_argument('--dataset_name', type=str, required=True, help='Name of the dataset class (e.g., VGGFace_Dataset)')
     parser.add_argument('--val_datasets', nargs='+', default=None, help='List of validation dataset names')
+    parser.add_argument('--min_num_images_per_class', type = int, default = 20, help = "The minimum number of images per class, classes less than this number are discarded.")
     parser.add_argument('--num_workers', type=int, default=4, help='Number of data loading workers')
     parser.add_argument('--crop_prob', type = float, default = 0.2, help = 'The probability of applying random cropping')
     parser.add_argument('--low_res_prop', type = float, default = 0.2, help = 'The probability of applying low resolution augmentation')
@@ -334,6 +340,7 @@ if __name__ == '__main__':
 
     # System
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from')
 
 
     
