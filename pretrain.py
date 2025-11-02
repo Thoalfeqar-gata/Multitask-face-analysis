@@ -47,6 +47,7 @@ class FaceRecognitionModel(pl.LightningModule):
         self.t_alpha = kwargs.get('t_alpha')
         self.max_epochs = kwargs.get('max_epochs')
         self.val_datasets = kwargs.get('val_datasets')
+        self.save_hyperparameters()
 
 
         # Instantiate the backbone
@@ -60,7 +61,7 @@ class FaceRecognitionModel(pl.LightningModule):
         self.head = losses.build_head(
             head_type=self.head_name,
             embedding_size=self.embedding_dim,
-            class_num=self.num_classes,
+            classnum=self.num_classes,
             m=self.margin,
             s=self.scale,
             h=self.h,
