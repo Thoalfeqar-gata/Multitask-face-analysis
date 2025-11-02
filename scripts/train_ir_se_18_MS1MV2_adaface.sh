@@ -1,4 +1,5 @@
 python pretrain.py \
+    --resume_from_checkpoint "checkpoints/ir_se_18_adaface_MS1MV2_Dataset/epoch=39-train_loss=3.13364.ckpt" \
     --backbone_name ir_se_18 \
     --pretrained 0 \
     --head_name adaface \

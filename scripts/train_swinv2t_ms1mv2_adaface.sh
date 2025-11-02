@@ -14,9 +14,9 @@ python pretrain.py \
     --scheduler cosine \
     --max_epochs 40 \
     --warmup_epochs 5 \
-    --batch_size 512 \
+    --batch_size 256 \
     --precision 16-mixed \
-    --dataset_name MS1MV2 \
+    --dataset_name MS1MV2_Dataset \
     --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
     --min_num_images_per_class 20 \
     --num_workers 8 \
