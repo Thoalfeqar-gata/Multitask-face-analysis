@@ -3,8 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import numpy as np
+import backbones.davit as davit
 from backbones.swin import SwinTransformer
 from backbones.swinv2 import SwinTransformerV2
+
 
 
 def get_backbone(backbone_name, embedding_dim=512, pretrained=True):
@@ -14,8 +16,51 @@ def get_backbone(backbone_name, embedding_dim=512, pretrained=True):
         return ResNetBackbone(name = backbone_name, embedding_dim=embedding_dim, pretrained=pretrained)
     elif 'ir' in backbone_name:
         return IRNetBackbone(name = backbone_name, embedding_dim=embedding_dim)
+    elif 'davit' in backbone_name:
+        return DaViT(name = backbone_name, embedding_dim=embedding_dim)
     else:
         return MobileNetBakcbone(embedding_dim=embedding_dim, pretrained=pretrained)
+
+
+class DaViT(nn.Module):
+    def __init__(self, name = 'davit_t', embedding_dim=512, eps = 1e-7):
+        super().__init__()
+        assert name in ['davit_t', 'davit_s', 'davit_b'], f"Unsupported DaViT model name: {name}"
+        if name == 'davit_t':
+            self.model = davit.DaViT_tiny()
+        elif name == 'davit_s':
+            self.model = davit.DaViT_small()
+        elif name == 'davit_b':
+            self.model = davit.DaViT_base()
+        else:
+            raise ValueError(f"Unsupported DaViT model name: {name}")
+    
+        self.eps = eps
+
+    
+    def forward(self, x):
+        """
+            Used in the face recognition pretraining phase.
+        """
+        embedding, multiscale_features = self.model(x) 
+
+        embedding_norm = torch.norm(embedding, 2, 1, True)
+        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
+
+        return normalized_embedding, embedding_norm
+    
+    def forward_multitask(self, x):
+        """
+            Used in the multitask training phase.
+        """
+        embedding, multiscale_features = self.model(x)
+
+        embedding_norm = torch.norm(embedding, 2, 1, True)
+        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
+
+        return normalized_embedding, embedding_norm, multiscale_features
+
+
 
 
 class SwinTransformerBackbone(nn.Module):
@@ -66,7 +111,7 @@ class SwinTransformerBackbone(nn.Module):
         """
             Used in the face recognition pretraining phase.
         """
-        local_features, global_features, embedding = self.model(x)
+        embedding, multiscale_features  = self.model(x)
         
         embedding_norm = torch.norm(embedding, 2, 1, True)
         normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
@@ -78,12 +123,12 @@ class SwinTransformerBackbone(nn.Module):
         """
             Used in the multitask training phase.
         """
-        local_features, global_features, embedding = self.model(x)
+        embedding, multiscale_features = self.model(x)
         
         embedding_norm = torch.norm(embedding, 2, 1, True)
         normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
         
-        return normalized_embedding, embedding_norm, local_features, global_features
+        return normalized_embedding, embedding_norm, multiscale_features
 
 
 
