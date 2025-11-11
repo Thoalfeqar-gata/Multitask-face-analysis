@@ -560,8 +560,9 @@ class SwinTransformerV2(nn.Module):
         # stochastic depth
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
 
-        # build layers
+        # build layers and downsamplers
         self.layers = nn.ModuleList()
+        self.downsample_layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(dim=int(embed_dim * 2 ** i_layer),
                                input_resolution=(patches_resolution[0] // (2 ** i_layer),
@@ -574,9 +575,19 @@ class SwinTransformerV2(nn.Module):
                                drop=drop_rate, attn_drop=attn_drop_rate,
                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                norm_layer=norm_layer,
-                               downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
+                            #    We will be adding patch mergin separately in the forward method.
+                            #    This is done to extract the multiscale features before they are merged.
+                            #    downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                                use_checkpoint=use_checkpoint,
                                pretrained_window_size=pretrained_window_sizes[i_layer])
+            
+            downsample = PatchMerging(
+                input_resolution=(patches_resolution[0] // (2 ** (i_layer)), 
+                                  patches_resolution[1] // (2 ** (i_layer))),
+                dim=int(embed_dim * 2 ** i_layer),
+                norm_layer=norm_layer) if (i_layer < self.num_layers - 1) else None
+            
+            self.downsample_layers.append(downsample)
             self.layers.append(layer)
 
         self.norm = norm_layer(self.num_features)
@@ -613,73 +624,31 @@ class SwinTransformerV2(nn.Module):
         return {"cpb_mlp", "logit_scale", 'relative_position_bias_table'}
 
     def forward_features(self, x):
-        """
-            Args:
-                x: (Tensor) A batch of the images to be processed
-
-            Return:
-                local_features: (Tensor) A tensor that combines all the intermediate 
-                                         features of the layers of the swin transformer.
-                                         The first two layers are average pooled so that 
-                                         they match the spatial resolution of the last
-                                         two. This variable contains only the first three
-                                         layers. 
-                global_features: (Tensor) A tensor that contains the final layer
-                                          output from the swin transformer. 
-                                          Its size is (7x7x768) if the image resolution
-                                          is 112x112x3.
-                x: (Tensor) The same as the global_features, but average pooled. 
-                            Useful for the recognition task.
-
-        """
-        patches_resolution = self.patch_embed.patches_resolution
-
         x = self.patch_embed(x)
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        local_features = []
-        i = 0
-        for layer in self.layers:
-            i += 1
+        features = {}
+        for i, layer in enumerate(self.layers):
             x = layer(x)
-
-            
-            # Exclude the final layer because it will become the variable called "global_features"
-            if not i == self.num_layers: 
-
-                H = patches_resolution[0] // (2 ** i)
-                W = patches_resolution[1] // (2 ** i)
-
-                B, L, C = x.shape
-                
-                temp = x.transpose(1, 2).reshape(B, C, H, W)
-                win_h = H // self.feature_resolution[0]
-                win_w = W // self.feature_resolution[1]
-                # Exclude the second to last layer because it is already in the size we want (7x7xself.num_features) 
-                if not (win_h == 1 and win_w == 1):
-                    temp = F.avg_pool2d(temp, kernel_size=(win_h, win_w))
-                local_features.append(temp)
-
-
-        local_features = torch.cat(local_features, dim=1)
-        # B, C, H, W
-        global_features = x
-        B, L, C = global_features.shape
-        global_features = global_features.transpose(1, 2).reshape(B, C, self.feature_resolution[0], self.feature_resolution[1])
-        # B, C, H, W
+            # In the original paper, the feature maps are extracted after the patch merging layer.
+            # But we extract them before, to get multi-scale features.
+            features[f"stage_{i}"] = x 
+            if self.downsample_layers[i] is not None:
+                x = self.downsample_layers[i](x)
 
         x = self.norm(x)  # B L C
-        x = self.avgpool(x.transpose(1, 2))  # B C 1
-        x = torch.flatten(x, 1)
-        return local_features, global_features, x
+        pooled_x = self.avgpool(x.transpose(1, 2))  # B C 1
+        pooled_x = torch.flatten(pooled_x, 1)
+
+        return pooled_x, features
 
 
     def forward(self, x):
-        local_features, global_features, x = self.forward_features(x)
-        x = self.feature(x)
-        return local_features, global_features, x
+        recognition_output, multiscale_features = self.forward_features(x)
+        recognition_output = self.feature(recognition_output)
+        return recognition_output, multiscale_features
 
     def flops(self):
         flops = 0
