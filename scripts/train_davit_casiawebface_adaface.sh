@@ -1,7 +1,5 @@
 python pretrain.py \
-    --resume_from_checkpoint "checkpoints/swin_v2_t_adaface_MS1MV2_Dataset/epoch=39-train_loss=3.49745.ckpt" \
-    --backbone_name swin_v2_t \
-    --pretrained 0 \
+    --backbone_name davit_t \
     --head_name adaface \
     --embedding_dim 512 \
     --margin 0.4 \
@@ -15,9 +13,9 @@ python pretrain.py \
     --scheduler cosine \
     --max_epochs 80 \
     --warmup_epochs 5 \
-    --batch_size 256 \
+    --batch_size 320 \
     --precision 16-mixed \
-    --dataset_name MS1MV2_Dataset \
+    --dataset_name CasiaWebFace_Dataset \
     --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
     --min_num_images_per_class 20 \
     --num_workers 8 \
