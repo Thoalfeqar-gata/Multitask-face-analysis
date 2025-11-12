@@ -575,9 +575,6 @@ class SwinTransformerV2(nn.Module):
                                drop=drop_rate, attn_drop=attn_drop_rate,
                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                norm_layer=norm_layer,
-                            #    We will be adding patch mergin separately in the forward method.
-                            #    This is done to extract the multiscale features before they are merged.
-                            #    downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                                use_checkpoint=use_checkpoint,
                                pretrained_window_size=pretrained_window_sizes[i_layer])
             
@@ -589,18 +586,6 @@ class SwinTransformerV2(nn.Module):
             
             self.downsample_layers.append(downsample)
             self.layers.append(layer)
-
-        self.norm = norm_layer(self.num_features)
-        self.avgpool = nn.AdaptiveAvgPool1d(1)
-        # self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
-        
-        self.feature = nn.Sequential(
-            nn.Linear(in_features=self.num_features, out_features=self.num_features, bias=False),
-            nn.BatchNorm1d(num_features=self.num_features, eps=2e-5),
-            nn.Linear(in_features=self.num_features, out_features=self.feature_embedding_dim, bias=False),
-            nn.BatchNorm1d(num_features=self.feature_embedding_dim, eps=2e-5)
-        )
-        self.feature_resolution = (patches_resolution[0] // (2 ** (self.num_layers-1)), patches_resolution[1] // (2 ** (self.num_layers-1)))
 
         self.apply(self._init_weights)
         for bly in self.layers:
@@ -629,26 +614,21 @@ class SwinTransformerV2(nn.Module):
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        features = {}
+        multiscale_features = []
         for i, layer in enumerate(self.layers):
             x = layer(x)
             # In the original paper, the feature maps are extracted after the patch merging layer.
             # But we extract them before, to get multi-scale features.
-            features[f"stage_{i}"] = x 
+            multiscale_features.append(x)
             if self.downsample_layers[i] is not None:
                 x = self.downsample_layers[i](x)
 
-        x = self.norm(x)  # B L C
-        pooled_x = self.avgpool(x.transpose(1, 2))  # B C 1
-        pooled_x = torch.flatten(pooled_x, 1)
-
-        return pooled_x, features
+        return multiscale_features
 
 
     def forward(self, x):
-        recognition_output, multiscale_features = self.forward_features(x)
-        recognition_output = self.feature(recognition_output)
-        return recognition_output, multiscale_features
+        multiscale_features = self.forward_features(x)
+        return multiscale_features
 
     def flops(self):
         flops = 0

@@ -476,18 +476,6 @@ class DaViT(nn.Module):
             main_blocks.append(block)
         self.main_blocks = nn.ModuleList(main_blocks)
 
-        self.norms = norm_layer(self.embed_dims[-1])
-        self.avgpool = nn.AdaptiveAvgPool1d(1)
-
-        # self.head = nn.Linear(self.embed_dims[-1], num_classes)
-
-        self.feature_head = nn.Sequential(
-            nn.Linear(in_features=self.embed_dims[-1], out_features=self.embed_dims[-1], bias=False),
-            nn.BatchNorm1d(num_features=self.embed_dims[-1], eps=2e-5),
-            nn.Linear(in_features=self.embed_dims[-1], out_features=self.head_embed_dim, bias=False),
-            nn.BatchNorm1d(num_features=self.head_embed_dim, eps=2e-5)
-        )
-
         if weight_init == 'conv':
             self.apply(_init_conv_weights)
         else:
@@ -511,44 +499,8 @@ class DaViT(nn.Module):
             for layer_index, branch_id in enumerate(block_param):
                 features_list[branch_id], _ = self.main_blocks[block_index][layer_index](features_list[branch_id], sizes[branch_id])
 
-        # Collect features into a dictionary
-        multiscale_features = {f"stage_{i}": feat for i, feat in enumerate(features_list)}
-
-        # Process the last feature for recognition output
-        final_features = features_list[-1]
-        final_features = self.avgpool(final_features.transpose(1, 2))
-        final_features = torch.flatten(final_features, 1)
-        final_features = self.norms(final_features)
-        recognition_output = self.feature_head(final_features)
         
-        return recognition_output, multiscale_features
-
-
-# def _create_transformer(
-#         variant,
-#         pretrained=False,
-#         default_cfg=None,
-#         **kwargs):
-#     if default_cfg is None:
-#         default_cfg = deepcopy(default_cfgs[variant])
-#     # overlay_external_default_cfg(default_cfg, kwargs)
-#     default_num_classes = default_cfg['num_classes']
-#     default_img_size = default_cfg['input_size'][-2:]
-#
-#     num_classes = kwargs.pop('num_classes', default_num_classes)
-#     img_size = kwargs.pop('img_size', default_img_size)
-#     if kwargs.get('features_only', None):
-#         raise RuntimeError('features_only not implemented for Vision Transformer models.')
-#
-#     model = build_model_with_cfg(
-#         DaViT, variant, pretrained,
-#         # default_cfg=default_cfg,
-#         img_size=img_size,
-#         num_classes=num_classes,
-#         pretrained_filter_fn=checkpoint_filter_fn,
-#         **kwargs)
-#
-#     return model
+        return features_list
 
 
 @register_model
@@ -586,9 +538,3 @@ def DaViT_large_window12_384(pretrained=False, pretrained_cfg=None, pretrained_c
         depths=(1, 1, 9, 1), mlp_ratio=4., overlapped_patch=False, **kwargs)
     return DaViT(**model_kwargs)
 # FLOPs: 102966676992 (384x384), params: 196811752
-
-
-# if __name__ == '__main__':
-#     from torchinfo import summary
-#     net = DaViT_tiny(num_classes=5)
-#     summary(net, input_size=(1, 3, 224, 224))

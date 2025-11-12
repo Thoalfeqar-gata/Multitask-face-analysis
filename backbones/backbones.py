@@ -27,11 +27,11 @@ class DaViT(nn.Module):
         super().__init__()
         assert name in ['davit_t', 'davit_s', 'davit_b'], f"Unsupported DaViT model name: {name}"
         if name == 'davit_t':
-            self.model = davit.DaViT_tiny()
+            self.model = davit.DaViT_tiny(img_size = 112)
         elif name == 'davit_s':
-            self.model = davit.DaViT_small()
+            self.model = davit.DaViT_small(img_size = 112)
         elif name == 'davit_b':
-            self.model = davit.DaViT_base()
+            self.model = davit.DaViT_base(img_size = 112)
         else:
             raise ValueError(f"Unsupported DaViT model name: {name}")
     
@@ -39,26 +39,8 @@ class DaViT(nn.Module):
 
     
     def forward(self, x):
-        """
-            Used in the face recognition pretraining phase.
-        """
-        embedding, multiscale_features = self.model(x) 
-
-        embedding_norm = torch.norm(embedding, 2, 1, True)
-        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
-
-        return normalized_embedding, embedding_norm
-    
-    def forward_multitask(self, x):
-        """
-            Used in the multitask training phase.
-        """
-        embedding, multiscale_features = self.model(x)
-
-        embedding_norm = torch.norm(embedding, 2, 1, True)
-        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
-
-        return normalized_embedding, embedding_norm, multiscale_features
+        multiscale_features = self.model(x) 
+        return multiscale_features
 
 
 
@@ -72,21 +54,27 @@ class SwinTransformerBackbone(nn.Module):
         if name == 'swin_t':
             swin_embedding_dim = 96
             depths = [2, 2, 6, 2]
+            num_heads = [3, 6, 12, 24]
         elif name == 'swin_s':
             swin_embedding_dim = 96
             depths = [2, 2, 18, 2]
+            num_heads = [3, 6, 12, 24]
         elif name == 'swin_b':
             swin_embedding_dim = 128
             depths = [2, 2, 18, 2]
+            num_heads = [4, 8, 16, 32]
         elif name == 'swin_v2_t':
             swin_embedding_dim = 96
             depths = [2, 2, 6, 2]
+            num_heads = [3, 6, 12, 24]
         elif name == 'swin_v2_s':
             swin_embedding_dim = 96
             depths = [2, 2, 18, 2]
+            num_heads = [3, 6, 12, 24]
         elif name == 'swin_v2_b':
             swin_embedding_dim = 128
             depths = [2, 2, 18, 2]
+            num_heads = [4, 8, 16, 32]
         else:
             raise ValueError(f"Unsupported Swin Transformer model name: {name}")
         
@@ -94,13 +82,15 @@ class SwinTransformerBackbone(nn.Module):
             self.model = SwinTransformerV2(
                 feature_embedding_dim=embedding_dim,
                 depths=depths,
-                embed_dim = swin_embedding_dim
+                embed_dim = swin_embedding_dim,
+                num_heads=num_heads
             )
         else:
             self.model = SwinTransformer(
                 feature_embedding_dim=embedding_dim,
                 depths=depths,
-                embed_dim = swin_embedding_dim
+                embed_dim = swin_embedding_dim,
+                num_heads=num_heads
             )
             
 
@@ -108,33 +98,21 @@ class SwinTransformerBackbone(nn.Module):
 
 
     def forward(self, x):
-        """
-            Used in the face recognition pretraining phase.
-        """
-        embedding, multiscale_features  = self.model(x)
-        
-        embedding_norm = torch.norm(embedding, 2, 1, True)
-        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
-        
-        return normalized_embedding, embedding_norm
-
-
-    def forward_multitask(self, x):
-        """
-            Used in the multitask training phase.
-        """
-        embedding, multiscale_features = self.model(x)
-        
-        embedding_norm = torch.norm(embedding, 2, 1, True)
-        normalized_embedding = torch.div(embedding, embedding_norm + self.eps)
-        
-        return normalized_embedding, embedding_norm, multiscale_features
+        multiscale_features  = self.model(x)
+        return multiscale_features
 
 
 
 
 
 
+"""
+
+    To-Do: The following CNN backbones need to be modified to extract 
+           multiscale features similar to the swin transformer and davit.
+           They cannot be used as they are right now.
+
+"""
 class IRNetBackbone(nn.Module):
     def __init__(self, name='ir_se_18', embedding_dim=512):
         super().__init__()
