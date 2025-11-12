@@ -11,7 +11,8 @@ from augmenter import Augmenter
 
 import backbones.backbones as backbones
 import datasets
-import losses
+import multitask.face_recognition_heads as face_recognition_heads
+from multitask.subnets import FaceRecognitionSubnet
 import eval
 
 torch.set_float32_matmul_precision('medium')
@@ -57,8 +58,20 @@ class FaceRecognitionModel(pl.LightningModule):
             pretrained = bool(self.pretrained)
         )
 
-        # Instantiate the head
-        self.head = losses.build_head(
+        # Instantiate the face recognition subnet
+        if self.backbone_name in ['swin_b', 'swin_v2_b', 'davit_b']:
+            feature_embedding_dim = 1024 # The final feature vector dim
+                                         # output by the backbone
+        else:
+            feature_embedding_dim = 768
+        
+        self.recognition_subnet = FaceRecognitionSubnet(
+            feature_embedding_dim=feature_embedding_dim,
+            embedding_dim=self.embedding_dim
+        )   
+
+        # Instantiate the margin head (AdaFace, ArcFace, or CosFace)
+        self.margin_head = face_recognition_heads.build_head(
             head_type=self.head_name,
             embedding_size=self.embedding_dim,
             classnum=self.num_classes,
@@ -75,7 +88,8 @@ class FaceRecognitionModel(pl.LightningModule):
         """
         Forward pass through the backbone.
         """
-        normalized_embedding, embedding_norm = self.backbone(x)
+        multiscale_features = self.backbone(x)
+        normalized_embedding, embedding_norm = self.recognition_subnet(multiscale_features)
         return normalized_embedding, embedding_norm
 
     def training_step(self, batch, batch_idx):
@@ -89,7 +103,7 @@ class FaceRecognitionModel(pl.LightningModule):
         images, labels = batch
         normalized_embedding, embedding_norm = self(images)
         
-        output = self.head(normalized_embedding, embedding_norm, labels)
+        output = self.margin_head(normalized_embedding, embedding_norm, labels)
         loss = F.cross_entropy(output, labels)
         accuracy = (output.argmax(dim=1) == labels).float().mean()
 
@@ -117,8 +131,8 @@ class FaceRecognitionModel(pl.LightningModule):
         flipped_embeddings2 = flipped_embeddings2 * flipped_norm2
 
         # sum   
-        emebeddings1 = (embeddings1 + flipped_embeddings1)
-        emebeddings2 = (embeddings2 + flipped_embeddings2)
+        embeddings1 = (embeddings1 + flipped_embeddings1)
+        embeddings2 = (embeddings2 + flipped_embeddings2)
 
         # normalize
         embeddings1 = F.normalize(embeddings1, p=2, dim=1)
@@ -148,8 +162,8 @@ class FaceRecognitionModel(pl.LightningModule):
         for i, val_output in enumerate(grouped_outputs):
             if not val_output:
                 continue
-            distances = torch.cat([x['distances'] for x in val_output]).cpu().numpy()
-            labels = torch.cat([x['labels'] for x in val_output]).cpu().numpy()
+            distances = torch.cat([x['distances'] for x in val_output]).cpu().float().numpy()
+            labels = torch.cat([x['labels'] for x in val_output]).cpu().float().numpy()
             
             dataset_name = self.val_datasets[i]
             
@@ -315,7 +329,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer name (can be either adamw or sgd)')
     parser.add_argument('--weight_decay', type = float, default = 5e-4, help = 'Weight decay for the optimizer')
     parser.add_argument('--scheduler', type=str, default='cosine', help='Learning rate scheduler name (can be either cosine or multistep)')
-    parser.add_argument('--scheduler_milestones', type = str, default = [20, 30], help = 'Milestones for the multistep scheduler (not needed for cosine)')
+    parser.add_argument('--scheduler_milestones', type=int, nargs='+', default=[20, 30], help='Milestones for the multistep scheduler (not needed for cosine)')
     parser.add_argument('--start_factor', type=float, default=0.1, help='Start factor for the linear warmup learning rate scheduler')
     parser.add_argument('--min_lr', type=float, default=5e-6, help='Minimum learning rate for the cosine scheduler')
     parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs')
@@ -342,7 +356,6 @@ if __name__ == '__main__':
     # System
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from')
-
 
     
     args = parser.parse_args()
