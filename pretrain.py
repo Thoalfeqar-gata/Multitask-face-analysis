@@ -13,7 +13,7 @@ import backbones.backbones as backbones
 import datasets
 import multitask.face_recognition_heads as face_recognition_heads
 from multitask.subnets import FaceRecognitionSubnet
-import eval
+import eval, os
 
 torch.set_float32_matmul_precision('medium')
 
@@ -316,6 +316,15 @@ def main(args):
     )
 
     trainer.fit(model, data_module, ckpt_path=args.resume_from_checkpoint)
+
+    # Save after training
+    output_path = os.path.join('data', 'models', f'{args.backbone_name}_{args.head_name}_{args.dataset_name}', 'model.pth')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    torch.save(
+        model.backbone.state_dict(),
+        output_path
+    )
 
 
 if __name__ == '__main__':
