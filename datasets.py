@@ -949,7 +949,109 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class AgeDB_Dataset(torch.utils.data.Dataset):
-    pass
+    def __init__(self, dataset_dir, 
+                 image_transform = None, 
+                 identity_target_transform = None, 
+                 age_target_transform = None, 
+                 gender_target_transform = None, 
+                 subset = None, 
+                 train_split = 0.7, 
+                 seed = 100
+        ):
+        
+        # In this dataset, we will assume the test and validation datasets to be half of what remains after the training split
+        # For example, if train_split = 0.7, test_split = 0.15, validations_split = 0.15
+        self.dataset_dir = dataset_dir
+        self.image_transform = image_transform
+        self.identity_target_transform = identity_target_transform
+        self.age_target_transform = age_target_transform
+        self.gender_target_transform = gender_target_transform
+
+
+        # Load the entire dataset
+        self.image_paths = []
+        self.identity_labels = []
+        self.age_labels = []
+        self.gender_labels = []
+
+
+        indices = []
+        for image_name in os.listdir(self.dataset_dir):
+            if image_name.endswith('.jpg'):
+                self.image_paths.append(image_name)
+            
+                index, identity, age, gender = image_name.split('_') # split the labels from the image name
+                indices.append(int(index))
+                self.identity_labels.append(identity)
+                self.age_labels.append(float(age))
+                self.gender_labels.append(gender.split('.')[0]) # remove the .jpg from the gender
+
+        # sort the indices
+        sorting_indices = np.argsort(indices)
+        self.image_paths = [self.image_paths[i] for i in sorting_indices]
+        self.identity_labels = [self.identity_labels[i] for i in sorting_indices]
+        self.age_labels = [self.age_labels[i] for i in sorting_indices]
+        self.gender_labels = [self.gender_labels[i] for i in sorting_indices]
+        
+        # transform the identity and gender into numbers
+        unique_identities = []
+        for identity in self.identity_labels:
+            if identity not in unique_identities:
+                unique_identities.append(identity)
+        
+        identity_mapping = {identity: i for i, identity in enumerate(unique_identities)}
+        self.identity_labels = [identity_mapping[identity] for identity in self.identity_labels]
+
+        self.gender_labels = [0 if gender == 'm' else 1 for gender in self.gender_labels]
+
+        
+        if subset is not None:
+            assert subset in ['train', 'test', 'validation'], "Subset must be either 'train', 'test', or 'validation'!"
+            indices = np.arange(len(self.image_paths))
+            rng = np.random.RandomState(seed)
+            rng.shuffle(indices)
+            split_idx = int(len(indices) * train_split)
+
+            if subset == 'train':
+                selected_indices = indices[:split_idx]
+            elif subset == 'test':
+                selected_indices = indices[split_idx:split_idx + int(len(indices) * (1 - train_split) * 0.5)]
+            else:
+                selected_indices = indices[split_idx + int(len(indices) * (1 - train_split) * 0.5):]
+            
+            self.image_paths = [self.image_paths[i] for i in selected_indices]
+            self.identity_labels = [self.identity_labels[i] for i in selected_indices]
+            self.age_labels = [self.age_labels[i] for i in selected_indices]
+            self.gender_labels = [self.gender_labels[i] for i in selected_indices]  
+
+        super().__init__()
+
+
+    def __len__(self):
+        return len(self.image_paths)
+    
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[index]), mode = torchvision.io.image.ImageReadMode.RGB)
+        identity = self.identity_labels[index]
+        age = self.age_labels[index]
+        gender = self.gender_labels[index]
+
+
+        if self.image_transform:
+            image = self.image_transform(image)
+        
+        if self.identity_target_transform:
+            identity = self.identity_target_transform(identity)
+        if self.age_target_transform:
+            age = self.age_target_transform(age)
+        if self.gender_target_transform:
+            gender = self.gender_target_transform(gender)
+
+                
+        
+        return image, (identity, age, gender)
+   
 
 #############################################
 
