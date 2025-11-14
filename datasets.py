@@ -942,12 +942,14 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 #############################################
 
 #   Age estimation
+#   Note: Some of the following datasets return multiple labels.
+#   For example, AgeDB has three labels, one for the identity, one for the age, and one for the gender.
+#   If a dataset has multiple labels, all the labels will be returned by the dataset class.
 
 #############################################
 
-"""
-    Implement here
-"""
+class AgeDB_Dataset(torch.utils.data.Dataset):
+    pass
 
 #############################################
 
