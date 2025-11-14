@@ -34,7 +34,11 @@ class FaceRecognitionSubnet(nn.Module):
         
         return normalized_embedding, embedding_norm
 
-    
+class AgeEstimationSubnet(nn.Module):
+    pass
+
+class GenderEstimationSubnet(nn.Module):
+    pass
 
 class EmotionRecognitionSubnet(nn.Module):
     def __init__(self, num_classes = 7, dropout_rate = 0.25, embedding_dim = 512):
