@@ -12,7 +12,7 @@ from augmenter import Augmenter
 import backbones.backbones as backbones
 import datasets
 import multitask.face_recognition_heads as face_recognition_heads
-from multitask.subnets import FaceRecognitionSubnet
+from multitask.subnets import FaceRecognitionEmbeddingSubnet
 import eval, os
 
 torch.set_float32_matmul_precision('medium')
@@ -65,7 +65,7 @@ class FaceRecognitionModel(pl.LightningModule):
         else:
             feature_embedding_dim = 768
         
-        self.recognition_subnet = FaceRecognitionSubnet(
+        self.recognition_subnet = FaceRecognitionEmbeddingSubnet(
             feature_embedding_dim=feature_embedding_dim,
             embedding_dim=self.embedding_dim
         )   
