@@ -197,6 +197,19 @@ class ChannelAttention(nn.Module):
         attention = attention.softmax(dim=-1)
         x = (attention @ q.transpose(-1, -2)).transpose(-1, -2)
         x = x.transpose(1, 2).reshape(B, N, C)
+
+        """
+        This is how the code should have been written to match the original paper.
+
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        k = k * self.scale
+        attention = k.transpose(-1, -2) @ q
+        attention = attention.softmax(dim=-1)
+        x = (attention @ v.transpose(-1, -2)).transpose(-1, -2)
+        x = x.transpose(1, 2).reshape(B, N, C)
+        
+        """
         x = self.proj(x)
         return x
 
