@@ -3,12 +3,22 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from multitask.face_recognition_heads import build_head
+from multitask.fusion import MultiScaleFusion
+from multitask.cbam import CBAM
+
 
 class FaceRecognitionSubnet(nn.Module):
     def __init__(
             self,
+            classnum,
+            head_type = 'adaface',
             feature_embedding_dim = 768, 
-            embedding_dim = 512
+            embedding_dim = 512,
+            m = 0.4, 
+            t_alpha = 1.0, 
+            h = 0.333, 
+            s = 64.0,
         ):
         
         super(FaceRecognitionSubnet, self).__init__()
@@ -21,9 +31,18 @@ class FaceRecognitionSubnet(nn.Module):
             nn.Linear(in_features = feature_embedding_dim, out_features = embedding_dim, bias = False),
             nn.BatchNorm1d(num_features = embedding_dim, eps = 2e-5)
         )
-    
 
-    def forward(self, multiscale_features):
+        self.head = build_head(
+            head_type = head_type,
+            embedding_size = embedding_dim,
+            classnum = classnum,
+            m = m,
+            t_alpha = t_alpha,
+            h = h,
+            s = s,
+        )
+            
+    def forward(self, multiscale_features, labels):
         x = multiscale_features[-1] #obtain the feature vector from the last stage, which has a shape of 49x768
         x = self.norm_layer(x) # B, 49, 768 
         x = self.avgpool(x.transpose(1, 2)) # B, 768, 1
@@ -32,32 +51,68 @@ class FaceRecognitionSubnet(nn.Module):
         embedding_norm = torch.norm(embedding, p=2, dim=1, keepdim = True)
         normalized_embedding = torch.div(embedding, embedding_norm)
         
-        return normalized_embedding, embedding_norm
+        logits = self.head(normalized_embedding, embedding_norm, labels)
+
+        return logits
+
 
 class AgeEstimationSubnet(nn.Module):
-    pass
+    def __init__(self):
+        super(AgeEstimationSubnet, self).__init__()
+
+        self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186])
+        self.cbam = CBAM(channels=512)
+        self.head = nn.Sequential( # A simple regression head
+            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 ->1x1x512
+            nn.Flatten(), # 1x1x512 -> 512
+            nn.ReLU(),
+            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.ReLU(),
+            nn.Linear(in_features = 256, out_features = 1, bias = True),
+        )
+
+    def forward(self, multiscale_features):
+        x = self.fusion(multiscale_features)
+        x = self.cbam(x)
+        return self.head(x)
+
 
 class GenderEstimationSubnet(nn.Module):
-    pass
+    def __init__(self):
+        super(GenderEstimationSubnet, self).__init__()
+        
+        self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186])
+        self.cbam = CBAM(channels=512)
+        self.head = nn.Sequential( # A simple binary classification head
+            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.Flatten(), # 1x1x512 -> 512
+            nn.ReLU(),
+            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.ReLU(),
+            nn.Linear(in_features = 256, out_features = 1, bias = True),
+        )
+    
+    def forward(self, multiscale_features):
+        x = self.fusion(multiscale_features)
+        x = self.cbam(x)
+        return self.head(x)
+
+
 
 class EmotionRecognitionSubnet(nn.Module):
-    def __init__(self, num_classes = 7, dropout_rate = 0.25, embedding_dim = 512):
+    def __init__(self, num_classes = 7):
         super(EmotionRecognitionSubnet, self).__init__()
 
-        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=1)
-        self.relu = nn.ReLU()
-        self.flatten = nn.Flatten()
-        self.dropout = nn.Dropout(dropout_rate)
-        self.fc1 = nn.Linear(in_features = 4*4*512, out_features = embedding_dim, bias = True)
-        self.fc2 = nn.Linear(in_features = embedding_dim, out_features = num_classes, bias = True)
+        self.head = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.Flatten(), # 1x1x512 -> 512
+            nn.ReLU(),
+            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.ReLU(),
+            nn.Linear(in_features = 256, out_features = num_classes, bias = True),
+
+        )
 
 
     def forward(self, x): # x represents the fused features
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.dropout(x)
-        x = self.relu(x)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+        return self.head(x)
