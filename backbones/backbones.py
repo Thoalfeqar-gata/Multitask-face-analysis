@@ -9,17 +9,17 @@ from backbones.swinv2 import SwinTransformerV2
 
 
 
-def get_backbone(backbone_name, embedding_dim=512, pretrained=True):
+def get_backbone(backbone_name, embedding_dim=512, imagenet_pretrained=True):
     if 'swin' in backbone_name:
         return SwinTransformerBackbone(name = backbone_name, embedding_dim=embedding_dim)
     elif 'res' in backbone_name:
-        return ResNetBackbone(name = backbone_name, embedding_dim=embedding_dim, pretrained=pretrained)
+        return ResNetBackbone(name = backbone_name, embedding_dim=embedding_dim, imagenet_pretrained=imagenet_pretrained)
     elif 'ir' in backbone_name:
         return IRNetBackbone(name = backbone_name, embedding_dim=embedding_dim)
     elif 'davit' in backbone_name:
         return DaViT(name = backbone_name, embedding_dim=embedding_dim)
     else:
-        return MobileNetBakcbone(embedding_dim=embedding_dim, pretrained=pretrained)
+        return MobileNetBakcbone(embedding_dim=embedding_dim, imagenet_pretrained=imagenet_pretrained)
 
 
 class DaViT(nn.Module):
@@ -126,19 +126,19 @@ class IRNetBackbone(nn.Module):
 
 
 class ResNetBackbone(nn.Module):
-    def __init__(self, name='resnet50', embedding_dim=512, pretrained=True, eps = 1e-7):
+    def __init__(self, name='resnet50', embedding_dim=512, imagenet_pretrained=True, eps = 1e-7):
         super().__init__()
 
         if name == 'resnet18':
-            self.model = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            self.model = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         elif name == 'resnet34':
-            self.model = torchvision.models.resnet34(weights=torchvision.models.ResNet34_Weights.IMAGENET1K_V1 if pretrained else None)
+            self.model = torchvision.models.resnet34(weights=torchvision.models.ResNet34_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         elif name == 'resnet50':
-            self.model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1 if pretrained else None)
+            self.model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         elif name == 'resnet101':
-            self.model = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.IMAGENET1K_V1 if pretrained else None)
+            self.model = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         elif name == 'resnet152':
-            self.model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V1 if pretrained else None)
+            self.model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         else:
             raise ValueError(f"Unsupported ResNet model name: {name}")
         
@@ -168,10 +168,10 @@ class ResNetBackbone(nn.Module):
 
 
 class MobileNetBakcbone(nn.Module):
-    def __init__(self, embedding_dim=512, pretrained=True, eps = 1e-7):
+    def __init__(self, embedding_dim=512, imagenet_pretrained=True, eps = 1e-7):
         super().__init__()
 
-        self.model = torchvision.models.mobilenet_v2(weights=torchvision.models.MobileNet_V2_Weights.IMAGENET1K_V1 if pretrained else None)
+        self.model = torchvision.models.mobilenet_v2(weights=torchvision.models.MobileNet_V2_Weights.IMAGENET1K_V1 if imagenet_pretrained else None)
         self.model.classifier = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(self.model.last_channel, embedding_dim),
