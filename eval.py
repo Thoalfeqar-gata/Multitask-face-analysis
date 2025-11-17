@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 ##################################
 
 
-def evaluate_backbone(backbone):
+def evaluate_backbone(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'], batch_size = 128):
     """
     Evaluates a face recognition backbone on standard benchmarks using 10-fold cross-validation.
 
@@ -31,7 +31,7 @@ def evaluate_backbone(backbone):
                global_auc_score, global_fpr, global_tpr, global_roc_thresholds).
               The primary metric reported in papers is 'mean_accuracy'.
     """
-    distances_results = get_face_recognition_distances_from_backbone(backbone)
+    distances_results = get_face_recognition_distances_from_backbone(backbone, datasets_to_test, batch_size = batch_size)
     metrics_results = get_metrics_from_distances(distances_results)
     return metrics_results
 
