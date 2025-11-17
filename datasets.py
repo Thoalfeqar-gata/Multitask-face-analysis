@@ -21,7 +21,7 @@ class ClassificationDataset(torch.utils.data.Dataset):
         A general classification dataset that can be inherited. 
     """
 
-    def __init__(self, dataset_dir, image_paths, labels, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed = 100):
+    def __init__(self, dataset_dir, image_paths, labels, image_transform = None, subset = None, train_split = 0.7, seed = 100):
         '''
         Args:
             dataset_dir: (str) The directory of the dataset. Used to obtain the full image paths.
@@ -31,8 +31,6 @@ class ClassificationDataset(torch.utils.data.Dataset):
             labels: (list) A list of integers for the labels (has to be sorted in ascending order)
 
             image_transform: (transform) The transform to be applied to the image.
-
-            target_transform: (transform) The transform to be applied to the target (labels).
 
             subset: (int) specifies a subset of the dataset in terms of the number of classes to load.
                     (train) specifies a random training subset.
@@ -52,7 +50,6 @@ class ClassificationDataset(torch.utils.data.Dataset):
         self.image_paths = np.array(image_paths, dtype = str)
         self.labels = np.array(labels, dtype = int)
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.subset = subset
         self.train_split = train_split
 
@@ -71,6 +68,7 @@ class ClassificationDataset(torch.utils.data.Dataset):
             unique_labels = np.unique(self.labels)
             label_mapping = {old_label: new_label for new_label, old_label in enumerate(unique_labels)}
             self.labels = np.array([label_mapping[label] for label in self.labels], dtype=int)
+            self.num_classes = len(unique_labels)
         
         elif self.subset in ['train', 'test']: # Subset by train/test split
             assert 0 < self.train_split < 1, "Train split must be between 0 and 1!"
@@ -101,8 +99,6 @@ class ClassificationDataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            label = self.target_transform(label)
         
         return image, label
     
@@ -123,6 +119,7 @@ class ClassificationDataset(torch.utils.data.Dataset):
         unique_labels = np.unique(self.labels)
         label_mapping = {old_label: new_label for new_label, old_label in enumerate(unique_labels)}
         self.labels = np.array([label_mapping[label] for label in self.labels])
+        self.num_classes = len(unique_labels)
         
 
 
@@ -147,7 +144,7 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
                 ...
             ...
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, subset = None, train_split = 0.7, seed=100):
         image_paths = []
         labels = []
 
@@ -169,25 +166,25 @@ class SimpleFaceRecognitionDataset(ClassificationDataset):
                 image_paths.append(os.path.join(dir, file)) # Use relative paths
                 labels.append(i)
         
-        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset, train_split, seed)
+        super().__init__(dataset_dir, image_paths, labels, image_transform, subset, train_split, seed)
 
 
 # Specific datasets can inherit from SimpleFaceRecognitionDataset
 class VGGFace_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face', 'aligned') , image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face', 'aligned') , image_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, subset, train_split, seed)
 
 class MS1MV2_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'ms1mv2'), image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'ms1mv2'), image_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, subset, train_split, seed)
 
 class Glint360k_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k'), image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k'), image_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, subset, train_split, seed)
 
 class CasiaWebFace_Dataset(SimpleFaceRecognitionDataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface'), image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
-       super().__init__(dataset_dir, image_transform, target_transform, subset, train_split, seed)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface'), image_transform = None, subset = None, train_split = 0.7, seed=100):
+       super().__init__(dataset_dir, image_transform, subset, train_split, seed)
 
 
 
@@ -209,7 +206,7 @@ class VerificationDataset(torch.utils.data.Dataset):
         The dataset is assumed to be organized in pairs of images with corresponding labels/distances (0 for same identity, 1 for different identity).
     """
 
-    def __init__(self, dataset_dir, image_pairs, labels, image_transform = None, target_transform = None):
+    def __init__(self, dataset_dir, image_pairs, labels, image_transform = None):
         '''
         Args:
             dataset_dir: (str) The directory of the dataset. Used to obtain the full image paths.
@@ -220,7 +217,6 @@ class VerificationDataset(torch.utils.data.Dataset):
 
             image_transform: (transform) The transform to be applied to the images.
 
-            target_transform: (transform) The transform to be applied to the target (labels).
         '''
         super().__init__()
         # The seed is passed to subclasses that may need it for shuffling.
@@ -231,7 +227,6 @@ class VerificationDataset(torch.utils.data.Dataset):
         self.image_pairs = np.array(image_pairs, dtype = object)
         self.labels = np.array(labels, dtype = int)
         self.image_transform = image_transform
-        self.target_transform = target_transform
 
     def __len__(self):
         return len(self.labels)
@@ -249,8 +244,7 @@ class VerificationDataset(torch.utils.data.Dataset):
         if self.image_transform:
             image1 = self.image_transform(image1)
             image2 = self.image_transform(image2)
-        if self.target_transform:
-            label = self.target_transform(label)
+
         return (image1, image2), label
 
 
@@ -263,7 +257,7 @@ class _PairedTxtVerificationDataset(VerificationDataset):
     These datasets' labels are ordered such that all the positive pairs appear first, then the negative pairs, which
     requires shuffling them.
     """
-    def __init__(self, dataset_dir, pairs_filename, image_transform=None, target_transform=None, seed = 100):
+    def __init__(self, dataset_dir, pairs_filename, image_transform=None, seed = 100):
         image_pairs = []
         labels = []
 
@@ -289,22 +283,22 @@ class _PairedTxtVerificationDataset(VerificationDataset):
         image_pairs, labels = zip(*combined)
 
         
-        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform)
 
 
 class CALFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'calfw'), image_transform=None, target_transform=None):
-        super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform, target_transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'calfw'), image_transform=None):
+        super().__init__(dataset_dir, 'pairs_CALFW.txt', image_transform)
 
 class CPLFW_Dataset(_PairedTxtVerificationDataset):
-    def __init__(self, dataset_dir  = os.path.join('data', 'datasets', 'face recognition', 'cplfw'), image_transform=None, target_transform=None):
-        super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform, target_transform)
+    def __init__(self, dataset_dir  = os.path.join('data', 'datasets', 'face recognition', 'cplfw'), image_transform=None):
+        super().__init__(dataset_dir, 'pairs_CPLFW.txt', image_transform)
 
 
 
 class CFP_Dataset(VerificationDataset):
     
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None):
+    def __init__(self, dataset_dir, image_transform = None):
         image_pairs = []
         labels = []
 
@@ -319,16 +313,16 @@ class CFP_Dataset(VerificationDataset):
             image_pairs.append((os.path.join('images', image1), os.path.join('images', image2)))
             labels.append(1 if label else 0) # append 1 if the label is true (1 represents zero distance for similar images) else append 0
 
-        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform)
 
 
 class CFPFP_Dataset(CFP_Dataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_fp'), image_transform = None, target_transform = None):
-        super().__init__(dataset_dir, image_transform, target_transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_fp'), image_transform = None):
+        super().__init__(dataset_dir, image_transform)
 
 class CFPFF_Dataset(CFP_Dataset):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_ff'), image_transform = None, target_transform = None):
-        super().__init__(dataset_dir, image_transform, target_transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_ff'), image_transform = None):
+        super().__init__(dataset_dir, image_transform)
 
 
 class LFW_Dataset(VerificationDataset):
@@ -348,7 +342,7 @@ class LFW_Dataset(VerificationDataset):
             Person_B_0001.jpg
             ...
     """
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'LFW'), image_transform=None, target_transform=None, pairs_file="pairs.csv"):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'LFW'), image_transform=None, pairs_file="pairs.csv"):
         image_pairs = []
         labels = []
 
@@ -383,7 +377,7 @@ class LFW_Dataset(VerificationDataset):
                     )
                 )
 
-        super().__init__(dataset_dir, image_pairs, labels, image_transform, target_transform)
+        super().__init__(dataset_dir, image_pairs, labels, image_transform)
 
 
 #############################################
@@ -404,17 +398,23 @@ class LFW_Dataset(VerificationDataset):
     
 """
 
-
 class RAF_Dataset(ClassificationDataset):
     """
     A RAF_Dataset class that inherits from ClassificationDataset.
-    RAF_subet: (str) can be either 'train' or 'test', and is used to choose the RAF train or test split.
+    RAF_subet: (str) Either 'train' or 'test' for the train/test split.
                      it is different from the subset variable in the ClassificationDataset class. (sets it to None by default).
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, RAF_subset = 'train', seed=100):
-        image_paths = []
-        labels = []
-        
+    def __init__(
+            self, 
+            dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB', 'RAF_DB', 'basic'), 
+            train_image_transform = None, 
+            test_image_transform = None, 
+            RAF_subset = 'train', 
+            seed=100
+        ):
+        self.image_paths = []
+        self.labels = []
+
         """
             RAF_DB original label structure is:
             1: Surprise  : 0
@@ -427,9 +427,9 @@ class RAF_Dataset(ClassificationDataset):
         """
         self.label_translation = [5, 2, 1, 3, 4, 0, 6]
 
-
-        if RAF_subset == 'train': #if training
-            label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_train_label.txt')
+        def _load_data(label_file):
+            image_paths = []
+            labels = []
 
             with open(label_file, 'r') as f:
                 lines = f.readlines()
@@ -439,20 +439,18 @@ class RAF_Dataset(ClassificationDataset):
                     image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
                     L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
                     labels.append(self.label_translation[L]) #append translated label 
+            
+            return image_paths, labels
+        
+        if RAF_subset == 'train': 
+            label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_train_label.txt')
+            self.image_paths, self.labels = _load_data(label_file)
 
         else: #if testing
             label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_test_label.txt')
-
-            with open(label_file, 'r') as f:
-                lines = f.readlines()   
-                
-                for line in lines:
-                    image_name, label = line.split(' ')
-                    image_paths.append(os.path.join('Image', 'aligned', f"{image_name[:-4]}_aligned.jpg"))
-                    L = int(label) - 1 #labels should be from 0 to 6, not 1 to 7
-                    labels.append(self.label_translation[L]) #append translated label
-
-        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
+            self.image_paths, self.labels = _load_data(label_file)
+        
+        super().__init__(dataset_dir, self.image_paths, self.labels, train_image_transform if RAF_subset == 'train' else test_image_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 
@@ -466,11 +464,10 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
     The labels in this dataset don't have to be translated.
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, seed=100):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         
         image_paths = []
         bboxes = []
@@ -483,7 +480,7 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
             for line in lines:
                 image_name, face_id_in_image, face_box_top, face_box_left, \
-                face_box_right, face_box_bottom, face_box_cofidence, expression_label = line.split(' ')
+                face_box_right, face_box_bottom, face_box_confidence, expression_label = line.split(' ')
 
                 image_paths.append(os.path.join('origin', image_name))
                 bboxes.append(
@@ -516,8 +513,6 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            label = self.target_transform(label)
         
         return image, label
 
@@ -525,7 +520,7 @@ class ExpW_Dataset(torch.utils.data.Dataset):
 
 class AffectNet_Dataset(ClassificationDataset):
     
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, seed=100):
         image_paths = []
         labels = []
 
@@ -551,7 +546,7 @@ class AffectNet_Dataset(ClassificationDataset):
             image_paths.append(image_name)
             labels.append(self.label_translation[label])
         
-        super().__init__(dataset_dir, image_paths, labels, image_transform, target_transform, subset = None, train_split = 0.7, seed=seed)
+        super().__init__(dataset_dir, image_paths, labels, image_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 #############################################
@@ -567,7 +562,7 @@ class AffectNet_Dataset(ClassificationDataset):
 """
 
 class W300_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
+    def __init__(self, dataset_dir, image_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
         """
             Padding and size are used for processing the image (cropping and resizing) along with its landmarks.
         """
@@ -575,7 +570,6 @@ class W300_Dataset(torch.utils.data.Dataset):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         landmarks = []
         self.padding = padding
         self.size = size
@@ -649,8 +643,6 @@ class W300_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            landmarks = self.target_transform(landmarks)
         
         output_image, output_landmarks = process_face_image_and_landmarks(image, landmarks, self.size, self.padding)
         return output_image, output_landmarks
@@ -658,10 +650,9 @@ class W300_Dataset(torch.utils.data.Dataset):
 
 
 class AFLW2000_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
+    def __init__(self, dataset_dir, image_transform = None, subset = None, train_split = 0.7, seed=100, padding = 1.2, size = 112):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.padding = padding
         self.size = size
         self.image_paths = []
@@ -702,8 +693,6 @@ class AFLW2000_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image) 
-        if self.target_transform:
-            landmarks = self.target_transform(landmarks)
         
         output_image, output_landmarks = process_face_image_and_landmarks(image, landmarks, self.size, self.padding)
 
@@ -713,10 +702,9 @@ class AFLW2000_Dataset(torch.utils.data.Dataset):
 
 
 class COFW_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = 'train', seed=100, padding = 1.2, size = 112):
+    def __init__(self, dataset_dir, image_transform = None, subset = 'train', seed=100, padding = 1.2, size = 112):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.padding = padding
         self.size = size
         self.image_paths = []
@@ -754,8 +742,6 @@ class COFW_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            landmarks = self.target_transform(landmarks)
 
         output_image, output_landmarks = process_face_image_and_landmarks(image, landmarks, size = self.size, padding = self.padding)
 
@@ -769,10 +755,9 @@ class COFW_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class FaceCaption1M_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, subset = None, train_split = 0.7, seed=100):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.image_paths = []
         self.captions = []
 
@@ -820,8 +805,6 @@ class FaceCaption1M_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            caption = self.target_transform(caption)
 
         return image, caption
 
@@ -836,10 +819,9 @@ class CelebA_Dataset(torch.utils.data.Dataset):
     """
         This dataset is already split into training, validation, and testing split, so no training split will be specified in the constructor.
     """
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = 'train',  seed=100):
+    def __init__(self, dataset_dir, image_transform = None, subset = 'train',  seed=100):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.image_paths = []
         self.attributes = []
         assert subset == 'train' or subset == 'test' or subset == 'validation', "Subset must be either 'train', 'validation', or test'!"
@@ -878,8 +860,6 @@ class CelebA_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            attributes = self.target_transform(attributes)
         
         return image, attributes
 
@@ -891,10 +871,9 @@ class CelebA_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class W300LP_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, image_transform = None, target_transform = None, subset = None, train_split = 0.7, seed=100):
+    def __init__(self, dataset_dir, image_transform = None, subset = None, train_split = 0.7, seed=100):
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.target_transform = target_transform
         self.image_paths = []
         self.pose_paths = []
         
@@ -924,8 +903,6 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 
         if self.image_transform:
             image = self.image_transform(image)
-        if self.target_transform:
-            pose = self.target_transform(pose)
         
         return image, pose
 
@@ -949,11 +926,8 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class AgeDB_Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dir, 
-                 image_transform = None, 
-                 identity_target_transform = None, 
-                 age_target_transform = None, 
-                 gender_target_transform = None, 
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), 
+                 image_transform = None,  
                  subset = None, 
                  train_split = 0.7, 
                  seed = 100
@@ -963,9 +937,6 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
         # For example, if train_split = 0.7, test_split = 0.15, validations_split = 0.15
         self.dataset_dir = dataset_dir
         self.image_transform = image_transform
-        self.identity_target_transform = identity_target_transform
-        self.age_target_transform = age_target_transform
-        self.gender_target_transform = gender_target_transform
 
 
         # Load the entire dataset
@@ -1002,9 +973,10 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
         identity_mapping = {identity: i for i, identity in enumerate(unique_identities)}
         self.identity_labels = [identity_mapping[identity] for identity in self.identity_labels]
 
-        self.gender_labels = [0 if gender == 'm' else 1 for gender in self.gender_labels]
+        self.gender_labels = [1 if gender == 'm' else 0 for gender in self.gender_labels]
 
-        
+        self.classnum = len(unique_identities)
+
         if subset is not None:
             assert subset in ['train', 'test', 'validation'], "Subset must be either 'train', 'test', or 'validation'!"
             indices = np.arange(len(self.image_paths))
@@ -1037,19 +1009,9 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
         age = self.age_labels[index]
         gender = self.gender_labels[index]
 
-
         if self.image_transform:
             image = self.image_transform(image)
-        
-        if self.identity_target_transform:
-            identity = self.identity_target_transform(identity)
-        if self.age_target_transform:
-            age = self.age_target_transform(age)
-        if self.gender_target_transform:
-            gender = self.gender_target_transform(gender)
 
-                
-        
         return image, (identity, age, gender)
    
 
@@ -1072,3 +1034,87 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
 """
     Implement here
 """
+
+
+
+#############################################
+"""
+    The following class is the main one used in the multitask training setup.
+    It will be updated with more tasks as dataset classes above are finalized.
+"""
+#############################################
+
+class MultiTaskDataLoader:
+    def __init__(self, batch_size = 192, image_transform = None, face_recognition_image_transform = None, min_num_images_per_class = 20):
+        
+        self.face_recognition_dataset = CasiaWebFace_Dataset(image_transform=face_recognition_image_transform)
+        if min_num_images_per_class is not None:
+            self.face_recognition_dataset.discard_classes(min_num_images_per_class)
+
+        self.datasets = {
+            'face recognition' : self.face_recognition_dataset,
+            'emotion recognition' : RAF_Dataset(train_image_transform=image_transform),
+            'age and gender' : AgeDB_Dataset(image_transform=image_transform),
+        }
+
+        self.batch_composition = {
+            'face recognition' : 1,
+            'emotion recognition' : 1,
+            'age and gender' : 1,
+        }
+        
+        total_weight = sum(self.batch_composition.values())
+
+        self.data_loaders = {}
+        for task in self.datasets.keys():
+            self.data_loaders[task] = torch.utils.data.DataLoader(
+                self.datasets[task],
+                batch_size = self.batch_composition[task] * batch_size // total_weight,
+                shuffle = True,
+                num_workers = 4,
+                pin_memory = True
+            )
+
+        
+    def __iter__(self):
+        self.loader_iters = {task: iter(loader) for task, loader in self.data_loaders.items()}
+        return self
+
+    def __len__(self):
+        total_batches = max(len(loader) for loader in self.data_loaders.values())
+        return total_batches
+
+    def __next__(self):
+        
+        """
+            The face recognition dataloader is the largest among the dataloader.
+            It will be processed at the end of this method to let other loaders
+            give one final batch before the epoch ends.
+        """
+        try:
+            # Use the persistent iterator from self.loader_iters
+            emotion_images, emotion_labels = next(self.loader_iters['emotion recognition'])
+        except StopIteration:
+            # If the iterator is exhausted, reset it and get the first batch
+            self.loader_iters['emotion recognition'] = iter(self.data_loaders['emotion recognition'])
+            emotion_images, emotion_labels = next(self.loader_iters['emotion recognition'])
+        
+        try:
+            age_gender_images, (identity, age, gender) = next(self.loader_iters['age and gender'])
+        except StopIteration:
+            self.loader_iters['age and gender'] = iter(self.data_loaders['age and gender'])
+            age_gender_images, (identity, age, gender) = next(self.loader_iters['age and gender'])
+        
+        # Get the next batch from the largest loader.
+        # When this raises StopIteration, it will correctly terminate the epoch.
+        face_images, face_labels = next(self.loader_iters['face recognition'])
+
+
+        return {
+            'face recognition' : (face_images, face_labels),
+            'emotion recognition' : (emotion_images, emotion_labels),
+            'age and gender' : (age_gender_images, (age, gender))
+        }
+        
+
+
