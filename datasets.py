@@ -928,9 +928,6 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 class AgeDB_Dataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), 
                  image_transform = None,  
-                 subset = None, 
-                 train_split = 0.7, 
-                 seed = 100
         ):
         
         # In this dataset, we will assume the test and validation datasets to be half of what remains after the training split
@@ -976,25 +973,6 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
         self.gender_labels = [1 if gender == 'm' else 0 for gender in self.gender_labels]
 
         self.classnum = len(unique_identities)
-
-        if subset is not None:
-            assert subset in ['train', 'test', 'validation'], "Subset must be either 'train', 'test', or 'validation'!"
-            indices = np.arange(len(self.image_paths))
-            rng = np.random.RandomState(seed)
-            rng.shuffle(indices)
-            split_idx = int(len(indices) * train_split)
-
-            if subset == 'train':
-                selected_indices = indices[:split_idx]
-            elif subset == 'test':
-                selected_indices = indices[split_idx:split_idx + int(len(indices) * (1 - train_split) * 0.5)]
-            else:
-                selected_indices = indices[split_idx + int(len(indices) * (1 - train_split) * 0.5):]
-            
-            self.image_paths = [self.image_paths[i] for i in selected_indices]
-            self.identity_labels = [self.identity_labels[i] for i in selected_indices]
-            self.age_labels = [self.age_labels[i] for i in selected_indices]
-            self.gender_labels = [self.gender_labels[i] for i in selected_indices]  
 
         super().__init__()
 
