@@ -60,11 +60,11 @@ class AgeEstimationSubnet(nn.Module):
         return self.head(x)
 
 
-class GenderEstimationSubnet(nn.Module):
+class GenderRecognitionSubnet(nn.Module):
     def __init__(self, transformer_embedding_dim = 96):
-        super(GenderEstimationSubnet, self).__init__()
+        super(GenderRecognitionSubnet, self).__init__()
         
-        self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186], transformer_embedding_dim=96)
+        self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
         self.cbam = CBAM(channels=512)
         self.head = nn.Sequential( # A simple binary classification head
             nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
