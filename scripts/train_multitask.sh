@@ -1,0 +1,21 @@
+python train.py \
+    --backbone_name swin_t \
+    --pretrained 0 \
+    --head_type adaface \
+    --embedding_dim 512 \
+    --margin 0.4 \
+    --scale 64 \
+    --t_alpha 0.99 \
+    --optimizer adamw \
+    --learning_rate 1e-3 \
+    --start_factor 1e-1 \
+    --min_lr 5e-6 \
+    --weight_decay 0.05 \
+    --scheduler cosine \
+    --max_epochs 40 \
+    --warmup_epochs 5 \
+    --batch_size 128 \
+    --precision 16-mixed \
+    --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
+    --min_num_images_per_class 100 \
+    --num_workers 8
