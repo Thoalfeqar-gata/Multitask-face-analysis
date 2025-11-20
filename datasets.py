@@ -407,8 +407,7 @@ class RAF_Dataset(ClassificationDataset):
     def __init__(
             self, 
             dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB', 'RAF_DB', 'basic'), 
-            train_image_transform = None, 
-            test_image_transform = None, 
+            image_transform = None, 
             RAF_subset = 'train', 
             seed=100
         ):
@@ -450,7 +449,7 @@ class RAF_Dataset(ClassificationDataset):
             label_file = os.path.join(dataset_dir, 'EmoLabel', 'list_test_label.txt')
             self.image_paths, self.labels = _load_data(label_file)
         
-        super().__init__(dataset_dir, self.image_paths, self.labels, train_image_transform if RAF_subset == 'train' else test_image_transform, subset = None, train_split = 0.7, seed=seed)
+        super().__init__(dataset_dir, self.image_paths, self.labels, image_transform = image_transform, subset = None, train_split = 0.7, seed=seed)
 
 
 
@@ -1023,76 +1022,74 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class MultiTaskDataLoader:
-    def __init__(self, batch_size = 192, image_transform = None, face_recognition_image_transform = None, min_num_images_per_class = 20):
-        
-        self.face_recognition_dataset = CasiaWebFace_Dataset(image_transform=face_recognition_image_transform)
-        if min_num_images_per_class is not None:
-            self.face_recognition_dataset.discard_classes(min_num_images_per_class)
+    """
+        A multitask dataloader that combines multiple datasets into a giant dataset for quick loading.
+        Can be used for training and testing.
+    """
+    def __init__(self, 
+                 datasets : torch.utils.data.Dataset,
+                 batch_sizes : list,
+                 num_workers : int,
+        ):
+        """
+            Args:
+                datasets (list): A list of the datasets to be combined in a multitask setting.
+                batch_sizes (list): A list of integers that represent the batch size of each dataset. Has to match the order of the datasets list.
+                num_workers (int): The number of cpu threads to use for loading data.
+        """
+        assert len(datasets) == len(batch_sizes), 'Make sure the number of datasets matches the number of batch sizes!'
 
-        self.datasets = {
-            'face recognition' : self.face_recognition_dataset,
-            'emotion recognition' : RAF_Dataset(train_image_transform=image_transform),
-            'age and gender' : AgeDB_Dataset(image_transform=image_transform),
-        }
+        self.datasets = datasets
+        self.batch_sizes = batch_sizes
 
-        self.batch_composition = {
-            'face recognition' : 1,
-            'emotion recognition' : 1,
-            'age and gender' : 1,
-        }
-        
-        total_weight = sum(self.batch_composition.values())
+        # sort the datasets from smallest to largset.
+        self.dataset_lengths = [len(d) for d in datasets]
+        self.sorted_indices = np.argsort(self.dataset_lengths).tolist()
+        self.max_len = max(self.dataset_lengths)
 
-        self.data_loaders = {}
-        for task in self.datasets.keys():
-            self.data_loaders[task] = torch.utils.data.DataLoader(
-                self.datasets[task],
-                batch_size = self.batch_composition[task] * batch_size // total_weight,
+
+        self.data_loaders = []
+        for i in range(len(datasets)):
+            data_loader = torch.utils.data.DataLoader(
+                dataset = self.datasets[i],
+                batch_size = self.batch_sizes[i],
                 shuffle = True,
-                num_workers = 4,
-                pin_memory = True
+                num_workers = num_workers,
+                pin_memory = True,
             )
+
+            self.data_loaders.append(data_loader)
 
         
     def __iter__(self):
-        self.loader_iters = {task: iter(loader) for task, loader in self.data_loaders.items()}
+        self.loader_iters = [iter(loader) for loader in self.data_loaders]
         return self
 
     def __len__(self):
-        total_batches = max(len(loader) for loader in self.data_loaders.values())
-        return total_batches
+        return max(len(loader) for loader in self.data_loaders)
 
     def __next__(self):
         
-        """
-            The face recognition dataloader is the largest among the dataloader.
-            It will be processed at the end of this method to let other loaders
-            give one final batch before the epoch ends.
-        """
-        try:
-            # Use the persistent iterator from self.loader_iters
-            emotion_images, emotion_labels = next(self.loader_iters['emotion recognition'])
-        except StopIteration:
-            # If the iterator is exhausted, reset it and get the first batch
-            self.loader_iters['emotion recognition'] = iter(self.data_loaders['emotion recognition'])
-            emotion_images, emotion_labels = next(self.loader_iters['emotion recognition'])
+        # self.batch_content will be ordered by dataset size, not original order.
+        self.batch_content = []
+        for index in self.sorted_indices[:-1]:
+            try:
+                batch = next(self.loader_iters[index])
+            except StopIteration:
+                self.loader_iters[index] = iter(self.data_loaders[index])
+                batch = next(self.loader_iters[index])
+            
+            self.batch_content.append(batch)
         
-        try:
-            age_gender_images, (identity, age, gender) = next(self.loader_iters['age and gender'])
-        except StopIteration:
-            self.loader_iters['age and gender'] = iter(self.data_loaders['age and gender'])
-            age_gender_images, (identity, age, gender) = next(self.loader_iters['age and gender'])
+        # process the largest dataset
+        batch = next(self.loader_iters[self.sorted_indices[-1]])
+        self.batch_content.append(batch)
+
+
+        # Restore the original order of batches.
+        final_batches = [None] * len(self.datasets)
+        for i, original_index in enumerate(self.sorted_indices):
+            final_batches[original_index] = self.batch_content[i]
         
-        # Get the next batch from the largest loader.
-        # When this raises StopIteration, it will correctly terminate the epoch.
-        face_images, face_labels = next(self.loader_iters['face recognition'])
-
-
-        return {
-            'face recognition' : (face_images, face_labels),
-            'emotion recognition' : (emotion_images, emotion_labels),
-            'age and gender' : (age_gender_images, (age, gender))
-        }
-        
-
-
+        return tuple(final_batches)
+            
