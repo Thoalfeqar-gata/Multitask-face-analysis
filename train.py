@@ -117,258 +117,50 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         
         return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output
 
+def main(**kwargs):
 
-class FaceRecognitionDataModule:
-    def __init__(self, **kwargs):
-        super().__init__()
-        
-        self.batch_size =kwargs.get('batch_size')
-        self.min_num_images_per_class = kwargs.get('min_num_images_per_class')
-        self.val_datasets = kwargs.get('val_datasets')
-        self.num_workers = kwargs.get('num_workers')
+    num_of_tasks = 3
 
-        
-        self.face_recognition_train_transform = transforms.Compose([
-        transforms.ToPILImage(),
-        Augmenter(),
-        transforms.Resize((112, 112)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
-    
-        self.image_transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize((112, 112)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            ])
-
-        self.val_transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.CenterCrop((112, 112)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
-    
-        self.train_loader = MultiTaskDataLoader(
-            image_transform=self.image_transform,
-            face_recognition_image_transform=self.face_recognition_train_transform,
-            batch_size = self.batch_size,
-            min_num_images_per_class=self.min_num_images_per_class
-        )
-        self.num_classes = self.train_loader.face_recognition_dataset.num_classes
-
-        if self.val_datasets:
-            self.instantiated_val_datasets = []
-            for val_dataset_name in self.val_datasets:
-                val_dataset_class = getattr(datasets, val_dataset_name)
-                self.instantiated_val_datasets.append(val_dataset_class(image_transform=self.val_transform))
+    # data preparation
+    face_recognition_dataset = datasets.CasiaWebFace_Dataset()
+    face_recognition_dataset.discard_classes(kwargs.get('min_num_images_per_class'))
 
 
-    def train_dataloader(self):
-        return self.train_loader
-
-    def val_dataloader(self):
-        if not hasattr(self, 'instantiated_val_datasets') or not self.instantiated_val_datasets:
-            return None
-        
-        val_loaders = []
-        for val_dataset in self.instantiated_val_datasets:
-            val_loaders.append(
-                DataLoader(val_dataset, batch_size=self.batch_size, 
-                                  num_workers=self.num_workers, pin_memory=True)
-            )
-        return val_loaders
+    # RAF Dataset
+    raf_dataset = datasets.RAF_Dataset()
+    raf_train_size = int(0.8 * len(raf_dataset))
+    raf_test_size = len(raf_dataset) - raf_train_size
+    raf_train_dataset, raf_test_dataset = torch.utils.data.random_split(raf_dataset, [raf_train_size, raf_test_size])
 
 
-def main(args):
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    torch.manual_seed(args.seed)
+    # AgeDB Dataset
+    agedb_dataset = datasets.AgeDB_Dataset()
+    agedb_train_size = int(0.8 * len(agedb_dataset))
+    agedb_test_size = len(agedb_dataset) - agedb_train_size
+    agedb_train_dataset, agedb_test_dataset = torch.utils.data.random_split(agedb_dataset, [agedb_train_size, agedb_test_size])
 
-    data_module = FaceRecognitionDataModule(**vars(args))
-    
-    train_loader = data_module.train_dataloader()
-    val_loaders = data_module.val_dataloader()
 
-    model = MultiTaskFaceAnalysisModel(num_classes=data_module.num_classes, **vars(args))
-    model.to(device)
 
-    if args.optimizer == 'adamw':
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=args.learning_rate,
-            weight_decay=args.weight_decay
-        )
-    elif args.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=args.learning_rate,
-            weight_decay=args.weight_decay
-        )
-    else:
-        raise ValueError(f"Optimizer {args.optimizer} not supported")
+    train_dataset = datasets.ZippedDataset([
+        face_recognition_dataset,
+        raf_dataset,
+        agedb_dataset
+    ])
 
-    if args.scheduler == 'cosine':
-        scheduler1 = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=args.start_factor,
-            total_iters=args.warmup_epochs
-        )
-        scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=args.max_epochs - args.warmup_epochs,
-            eta_min=args.min_lr
-        )
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
-            optimizer,
-            schedulers=[scheduler1, scheduler2],
-            milestones=[args.warmup_epochs]
-        )
-    elif args.scheduler == 'multistep':
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=args.scheduler_milestones
-        )
-    else:
-        raise ValueError(f"Scheduler {args.scheduler} not supported")
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size = kwargs.get('batch_size') // num_of_tasks,
+        pin_memory = True,
+        num_workers = kwargs.get('num_workers')
+    )
 
     
-    writer = SummaryWriter(log_dir=os.path.join('logs', args.backbone_name, args.head_type, 'multitask_training_test'))
+
+
     
-    scaler = torch.amp.GradScaler(device = 'cuda', enabled=args.precision == '16-mixed')
-    
-    start_epoch = 0
-    if args.resume_from_checkpoint:
-        checkpoint = torch.load(args.resume_from_checkpoint)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
 
-    for epoch in range(start_epoch, args.max_epochs):
-        model.train()
-        
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.max_epochs}")
-        
-        for batch_idx, batch in enumerate(progress_bar):
-            
-            face_images, face_labels = batch['face recognition']
-            emotion_images, emotion_labels = batch['emotion recognition']
-            age_images, (age, gender) = batch['age and gender']
-            
-            face_images = face_images.to(device)
-            face_labels = torch.tensor(face_labels, device=device)
-            emotion_images = emotion_images.to(device)
-            emotion_labels = emotion_labels.to(device)
-            age_images = age_images.to(device)
-            age = age.to(device)
-            gender = gender.to(device)
 
-            images = torch.cat([face_images, emotion_images, age_images], dim=0)
 
-            with torch.amp.autocast(device_type = 'cuda', enabled=args.precision == '16-mixed'):
-                (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output = model(images)
-
-                extraction_indices = [0]
-                for size in [face_images.size(0), emotion_images.size(0), age_images.size(0)]:
-                    extraction_indices.append(extraction_indices[-1] + size)
-
-                face_recognition_output = normalized_embedding[extraction_indices[0]:extraction_indices[1]]
-                face_recognition_embedding_norm = embedding_norm[extraction_indices[0]:extraction_indices[1]]
-
-                emotion_output = emotion_output[extraction_indices[1]:extraction_indices[2]]
-
-                age_output = age_output[extraction_indices[2]:extraction_indices[3]]
-                gender_output = gender_output[extraction_indices[2]:extraction_indices[3]]
-
-                output = model.margin_head(face_recognition_output, face_recognition_embedding_norm, face_labels)
-                face_loss = F.cross_entropy(output, face_labels)
-
-                emotion_loss = F.cross_entropy(emotion_output, emotion_labels)
-                age_loss = F.l1_loss(age_output, age.unsqueeze(1).float())
-                gender_loss = F.binary_cross_entropy_with_logits(gender_output, gender.unsqueeze(1).float())
-
-                total_loss = face_loss + emotion_loss + age_loss + gender_loss
-
-            scaler.scale(total_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
-
-            progress_bar.set_postfix({
-                'face_loss': face_loss.item(),
-                'emotion_loss': emotion_loss.item(),
-                'age_loss': age_loss.item(),
-                'gender_loss': gender_loss.item(),
-                'total_loss': total_loss.item(),
-                'lr': optimizer.param_groups[0]['lr']
-            })
-            
-            writer.add_scalar('Loss/face', face_loss.item(), epoch * len(train_loader) + batch_idx)
-            writer.add_scalar('Loss/emotion', emotion_loss.item(), epoch * len(train_loader) + batch_idx)
-            writer.add_scalar('Loss/age', age_loss.item(), epoch * len(train_loader) + batch_idx)
-            writer.add_scalar('Loss/gender', gender_loss.item(), epoch * len(train_loader) + batch_idx)
-            writer.add_scalar('Loss/total', total_loss.item(), epoch * len(train_loader) + batch_idx)
-            writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch * len(train_loader) + batch_idx)
-
-        scheduler.step()
-
-        if val_loaders:
-            model.eval()
-            with torch.no_grad():
-                for dataloader_idx, val_loader in enumerate(val_loaders):
-                    validation_outputs = []
-                    for batch in tqdm(val_loader, desc=f"Validating on {args.val_datasets[dataloader_idx]}"):
-                        (image1_batch, image2_batch), label_batch = batch
-                        image1_batch = image1_batch.to(device)
-                        image2_batch = image2_batch.to(device)
-                        label_batch = label_batch.to(device)
-
-                        embeddings1, norm1 = model.face_recognition_embedding_subnet(model.backbone(image1_batch))
-                        embeddings2, norm2 = model.face_recognition_embedding_subnet(model.backbone(image2_batch))
-                        flipped_embeddings1, flipped_norm1 = model.face_recognition_embedding_subnet(model.backbone(torch.flip(image1_batch, dims=[3])))
-                        flipped_embeddings2, flipped_norm2 = model.face_recognition_embedding_subnet(model.backbone(torch.flip(image2_batch, dims=[3])))
-
-                        embeddings1 = embeddings1 * norm1
-                        embeddings2 = embeddings2 * norm2
-                        flipped_embeddings1 = flipped_embeddings1 * flipped_norm1
-                        flipped_embeddings2 = flipped_embeddings2 * flipped_norm2
-
-                        embeddings1 = (embeddings1 + flipped_embeddings1)
-                        embeddings2 = (embeddings2 + flipped_embeddings2)
-
-                        embeddings1 = F.normalize(embeddings1, p=2, dim=1)
-                        embeddings2 = F.normalize(embeddings2, p=2, dim=1)
-
-                        diff = embeddings1 - embeddings2
-                        dist = torch.sum(torch.square(diff), axis=1)
-                        validation_outputs.append({'distances': dist, 'labels': label_batch})
-
-                    distances = torch.cat([x['distances'] for x in validation_outputs]).cpu().float().numpy()
-                    labels = torch.cat([x['labels'] for x in validation_outputs]).cpu().float().numpy()
-                    
-                    dataset_name = args.val_datasets[dataloader_idx]
-                    metrics_results = eval.get_metrics_from_distances({dataset_name: (distances, labels)})
-                    mean_accuracy, _, _, _, _, _, _, _ = metrics_results[dataset_name]
-                    
-                    writer.add_scalar(f'Val_Acc/{dataset_name}', mean_accuracy, epoch)
-                    print(f"Epoch {epoch+1} - {dataset_name} Val Acc: {mean_accuracy:.4f}")
-
-        
-        checkpoint_path = os.path.join('checkpoints', args.backbone_name, args.head_type, 'multitask_training_test', f'epoch_{epoch}.pth')
-        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-        }, checkpoint_path)
-
-    writer.close()
 
 
 if __name__ == '__main__':
@@ -398,7 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--precision', type=str, default = '16-mixed', help='Use mixed precision training')
 
     # Data
-    parser.add_argument('--val_datasets', nargs='+', default=None, help='List of validation dataset names')
     parser.add_argument('--min_num_images_per_class', type = int, default = 20, help = "The minimum number of images per class, classes less than this number are discarded.")
     parser.add_argument('--num_workers', type=int, default=4, help='Number of data loading workers')
 
@@ -407,4 +198,4 @@ if __name__ == '__main__':
     parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from')
 
     args = parser.parse_args()
-    main(args)
+    main(**vars(args))
