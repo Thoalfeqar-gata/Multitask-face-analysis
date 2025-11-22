@@ -1,6 +1,7 @@
 python train.py \
     --backbone_name swin_t \
     --pretrained 0 \
+    --resume_from_checkpoint checkpoints/multitask_training_test_davit/model.pth \
     --head_type adaface \
     --embedding_dim 512 \
     --margin 0.4 \
@@ -12,10 +13,9 @@ python train.py \
     --min_lr 5e-6 \
     --weight_decay 0.05 \
     --scheduler cosine \
-    --max_epochs 40 \
+    --max_epochs 80 \
     --warmup_epochs 5 \
-    --batch_size 128 \
+    --batch_size 256 \
     --precision 16-mixed \
-    --val_datasets LFW_Dataset CALFW_Dataset CPLFW_Dataset \
-    --min_num_images_per_class 100 \
+    --min_num_images_per_class 20 \
     --num_workers 8
