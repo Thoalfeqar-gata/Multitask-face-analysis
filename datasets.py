@@ -926,12 +926,10 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 
 class AgeDB_Dataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), 
-                 image_transform = None,  
+                 image_transform = None, subset = 'train',  
         ):
         
-        # In this dataset, we will assume the test and validation datasets to be half of what remains after the training split
-        # For example, if train_split = 0.7, test_split = 0.15, validations_split = 0.15
-        self.dataset_dir = dataset_dir
+        self.dataset_dir = os.path.join(dataset_dir, subset)
         self.image_transform = image_transform
 
 
@@ -1093,3 +1091,34 @@ class MultiTaskDataLoader:
         
         return tuple(final_batches)
             
+
+#############################################
+
+#   Transformation wrapper
+
+#############################################
+
+class TransformedDataset(torch.utils.data.Dataset):
+    """
+    A wrapper dataset that applies a transform to a given dataset.
+    Useful for applying different transforms to train/test splits that
+    come from the same base dataset object.
+    """
+    def __init__(self, dataset, transform=None):
+        self.dataset = dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        # Assumes the wrapped dataset returns (image, label) or (image, (label1, label2, ...))
+        item = self.dataset[idx]
+        image = item[0]
+        labels = item[1]
+        
+        if self.transform:
+            image = self.transform(image)
+            
+        return image, labels
+
