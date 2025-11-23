@@ -240,7 +240,6 @@ def main(**kwargs):
     scaler = torch.amp.GradScaler(device = device)
 
     model.to(device)
-    model.train()
     # load the previous checkpoint if it exists:
     if checkpoint_path is not None and os.path.exists(checkpoint_path) and os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
@@ -253,6 +252,7 @@ def main(**kwargs):
 
     # training loop
     for epoch in range(start_epoch, epochs):
+        model.train()
         
         running_loss = 0.0
         running_face_rec_loss = 0.0
@@ -371,22 +371,33 @@ def main(**kwargs):
             'loss' : epoch_loss,
         }
 
-        os.makedirs(checkpoint_path, exist_ok = True)
+        if not os.path.exists(checkpoint_path):
+            os.makedirs(os.path.split(checkpoint_path)[0])
+            f = open(checkpoint_path, 'x')
+
         torch.save(
             checkpoint, 
             checkpoint_path
         )
 
+        
         if use_validation:
             print('Validating...')
-
+            model.eval()
             # face recognition
-            metrics = eval.evaluate_backbone(model.backbone, datasets_to_test=['CPLFW', 'CALFW'])    
+            face_rec_model = nn.Sequential(
+                model.backbone,
+                model.face_recognition_embedding_subnet
+            )
+            metrics = eval.evaluate_backbone(face_rec_model, datasets_to_test=['CPLFW', 'CALFW'])    
+            del face_rec_model #cleanup
             
             for key, db_metrics in metrics.items():
                 accuracy, _, _, f1_score, _, _, _, _ = db_metrics
                 print(f'Accuracy for {key} = {accuracy}.')
                 print(f'F1 score for {key} = {f1_score}')
+
+            
         
 
 
