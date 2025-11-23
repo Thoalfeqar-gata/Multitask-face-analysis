@@ -22,7 +22,7 @@ def evaluate_backbone(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CF
     standard face recognition evaluation protocol (e.g., LFW).
 
     Args:
-        backbone (torch.nn.Module): The trained face recognition model (embedding extractor).
+        backbone : The trained face recognition model (embedding extractor).
 
     Returns:
         dict: A dictionary where keys are dataset names (e.g., 'LFW') and values
