@@ -17,5 +17,5 @@ python train.py \
     --warmup_epochs 5 \
     --batch_size 256 \
     --precision 16-mixed \
-    --min_num_images_per_class 20 \
+    --min_num_images_per_class 250 \
     --num_workers 8
