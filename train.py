@@ -30,6 +30,7 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         # Backbone args
         self.backbone_name = kwargs.get('backbone_name')
         self.pretrained_backbone_path = kwargs.get('pretrained_backbone_path')
+        self.pretrained_face_recognition_path = kwargs.get('pretrained_face_recognition_path')
         self.imagenet_pretrained = kwargs.get('pretrained')
 
         # Face recognition args
@@ -52,6 +53,7 @@ class MultiTaskFaceAnalysisModel(nn.Module):
             embedding_dim=self.embedding_dim
         )
 
+        print(self.pretrained_backbone_path)
         if self.pretrained_backbone_path is not None:
             self.backbone.load_state_dict(torch.load(self.pretrained_backbone_path))
             print(f'Loaded pretrained backbone from {self.pretrained_backbone_path}.')
@@ -73,6 +75,10 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         self.face_recognition_embedding_subnet = FaceRecognitionEmbeddingSubnet(
             feature_embedding_dim=self.feature_embedding_dim,
         )
+
+        if self.pretrained_face_recognition_path:
+            self.face_recognition_embedding_subnet.load_state_dict(torch.load(self.pretrained_face_recognition_path))
+            print(f'Loaded pretrained face recognition subnet from {self.pretrained_face_recognition_path}')
 
         self.margin_head = face_recognition_heads.build_head(
             head_type = self.head_type,
@@ -127,7 +133,6 @@ def main(**kwargs):
     use_validation = True # toggle validation datasets on or off. 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     checkpoint_path = kwargs.get('resume_from_checkpoint')
-
 
     # train and test transforms
     train_face_rec_transform = transforms.Compose([ # for face recognition during training.
@@ -220,10 +225,25 @@ def main(**kwargs):
     learning_rate = kwargs.get('learning_rate')
 
 
+    # Separate parameters into backbone and other parts
+    backbone_params = []
+    other_params = []
+    for name, param in model.named_parameters():
+        if 'backbone' in name:
+            backbone_params.append(param)
+        else:
+            other_params.append(param)
+
+    # Create parameter groups with different learning rates
+    param_groups = [
+        {'params': backbone_params, 'lr': learning_rate / 10},
+        {'params': other_params, 'lr': learning_rate}
+    ]
+
     if optimizer_name == 'adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay = weight_decay)
+        optimizer = torch.optim.AdamW(param_groups, lr=learning_rate, weight_decay=weight_decay)
     elif optimizer_name == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay = weight_decay)
+        optimizer = torch.optim.SGD(param_groups, lr=learning_rate, weight_decay=weight_decay)
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
@@ -345,7 +365,8 @@ def main(**kwargs):
                 em_loss=f"{emotion_rec_loss.item():.4f}",
                 age_loss=f"{age_estimation_loss.item():.4f}",
                 gen_loss=f"{gender_rec_loss.item():.4f}",
-                lr=f"{optimizer.param_groups[0]['lr']:.6f}"
+                lr=f"{optimizer.param_groups[1]['lr']:.6f}",
+                lr_backbone = f'{optimizer.param_groups[0]['lr']:.6f}'
             )
 
         scheduler.step()
@@ -372,7 +393,7 @@ def main(**kwargs):
         }
 
         if not os.path.exists(checkpoint_path):
-            os.makedirs(os.path.split(checkpoint_path)[0])
+            os.makedirs(os.path.split(checkpoint_path)[0], exist_ok = True)
             f = open(checkpoint_path, 'x')
 
         torch.save(
@@ -406,7 +427,8 @@ if __name__ == '__main__':
 
     # Model Hyperparameters
     parser.add_argument('--backbone_name', type=str, default='swin_t', help='Backbone model name')
-    parser.add_argument('--pretrained', type = int, default = 0, help='Use pretrained weights 0 = False, 1 = True')
+    parser.add_argument('--pretrained_backbone_path', type = str, default = None, help='The path to a pretrained backbone')
+    parser.add_argument('--pretrained_face_recognition_path', type = str, default = None, help = 'The path to the pretrained face recognition subnet')
     parser.add_argument('--head_type', type=str, default='adaface', help='Head name (e.g., arcface, cosface, adaface)')
     parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
     parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer name (can be either adamw or sgd)')
