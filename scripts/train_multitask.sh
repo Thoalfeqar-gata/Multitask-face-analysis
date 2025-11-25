@@ -1,6 +1,7 @@
 python train.py \
-    --backbone_name swin_t \
-    --pretrained 0 \
+    --backbone_name davit_t\
+    --pretrained_backbone_path data/models/davit_t_adaface_MS1MV2_Dataset/backbone.pth \
+    --pretrained_face_recognition_path data/models/davit_t_adaface_MS1MV2_Dataset/recognition_subnet.pth \
     --resume_from_checkpoint checkpoints/multitask_training_test_davit/model.pth \
     --head_type adaface \
     --embedding_dim 512 \
@@ -17,5 +18,5 @@ python train.py \
     --warmup_epochs 5 \
     --batch_size 256 \
     --precision 16-mixed \
-    --min_num_images_per_class 250 \
+    --min_num_images_per_class 20 \
     --num_workers 8
