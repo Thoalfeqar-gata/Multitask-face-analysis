@@ -55,7 +55,7 @@ class FaceRecognitionModel(pl.LightningModule):
         self.backbone = backbones.get_backbone(
             backbone_name=self.backbone_name,
             embedding_dim=self.embedding_dim,
-            pretrained = bool(self.pretrained)
+            imagenet_pretrained = bool(self.pretrained)
         )
 
         # Instantiate the face recognition subnet
