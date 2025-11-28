@@ -41,6 +41,7 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         self.scale = kwargs.get('scale')
         self.h = kwargs.get('h')
         self.t_alpha = kwargs.get('t_alpha')
+        
 
         ##########
         # Backbone
@@ -197,7 +198,7 @@ def main(**kwargs):
     if use_validation:
         raf_val_dataloader = torch.utils.data.DataLoader(
             dataset = raf_val_dataset,
-            batch_size = 128,
+            batch_size = 32,
             shuffle = False,
             num_workers = num_workers,
             pin_memory = True,
@@ -205,7 +206,7 @@ def main(**kwargs):
 
         agedb_val_dataloader = torch.utils.data.DataLoader(
             dataset = agedb_val_dataset,
-            batch_size = 128,
+            batch_size = 32,
             shuffle = False,
             num_workers=num_workers,
             pin_memory=True
@@ -274,7 +275,6 @@ def main(**kwargs):
     for epoch in range(start_epoch, epochs):
         model.train()
         
-        running_loss = 0.0
         running_face_rec_loss = 0.0
         running_emotion_rec_loss = 0.0
         running_age_estimation_loss = 0.0
@@ -392,10 +392,11 @@ def main(**kwargs):
             'loss' : epoch_loss,
         }
 
+        # Create the checkpoint file if it doesn't exist.
         if not os.path.exists(checkpoint_path):
             os.makedirs(os.path.split(checkpoint_path)[0], exist_ok = True)
             f = open(checkpoint_path, 'x')
-
+        
         torch.save(
             checkpoint, 
             checkpoint_path
@@ -405,21 +406,80 @@ def main(**kwargs):
         if use_validation:
             print('Validating...')
             model.eval()
-            # face recognition
-            face_rec_model = nn.Sequential(
-                model.backbone,
-                model.face_recognition_embedding_subnet
-            )
-            metrics = eval.evaluate_backbone(face_rec_model, datasets_to_test=['CPLFW', 'CALFW'])    
-            del face_rec_model #cleanup
-            
-            for key, db_metrics in metrics.items():
-                accuracy, _, _, f1_score, _, _, _, _ = db_metrics
-                print(f'Accuracy for {key} = {accuracy}.')
-                print(f'F1 score for {key} = {f1_score}')
+            with torch.no_grad():
+                # face recognition
+                face_rec_model = nn.Sequential(
+                    model.backbone,
+                    model.face_recognition_embedding_subnet
+                )
+                metrics = eval.evaluate_backbone(face_rec_model, datasets_to_test=['CPLFW', 'CALFW'])    
+                del face_rec_model #cleanup
+                
+                for key, db_metrics in metrics.items():
+                    accuracy, _, _, f1_score, _, _, _, _ = db_metrics
+                    print(f'Accuracy for {key} = {accuracy}.')
+                    print(f'F1 score for {key} = {f1_score}')
 
-            
-        
+                # Emotion recognition
+                predictions = []
+                labels = []
+                for image, label in raf_val_dataloader:
+                    image = image.to('cuda', non_blocking = True)
+                    label = label.to('cuda', non_blocking = True)
+
+                    emotion_logits = model.emotion_recognition_subnet(model.backbone(image))
+                    emotion_prediction = torch.argmax(emotion_logits, dim = 1)
+                    predictions.append(emotion_prediction)
+                    labels.append(label)
+
+                predictions = torch.cat(predictions, dim = 0)
+                labels = torch.cat(labels, dim = 0)
+                emotion_accuracy = (predictions == labels).float().mean().item()
+
+                # cleanup
+                del predictions, labels
+
+
+                print(f'Accuracy for RAF = {emotion_accuracy}')
+                print()
+
+                # Age and Gender Estimation
+                age_predictions, gender_predictions = [], []
+                gender_labels, age_labels = [], []
+                for image, (_, age_label, gender_label) in agedb_val_dataloader:
+                    image = image.to('cuda', non_blocking = True)
+                    age_label = age_label.to('cuda', non_blocking = True).view(-1, 1)
+                    gender_label = gender_label.to('cuda', non_blocking = True).view(-1, 1).float()
+
+                    age_prediction = model.age_estimation_subnet(model.backbone(image))
+                    gender_prediction = model.gender_recognition_subnet(model.backbone(image))
+                    age_predictions.append(age_prediction)
+                    gender_predictions.append(gender_prediction)
+                    age_labels.append(age_label)
+                    gender_labels.append(gender_label)
+                
+                age_predictions = torch.cat(age_predictions, dim = 0)
+                gender_predictions = torch.cat(gender_predictions, dim = 0)
+                age_labels = torch.cat(age_labels, dim = 0)
+                gender_labels = torch.cat(gender_labels, dim = 0)
+
+                age_l1_score = F.l1_loss(age_predictions, age_labels).item()
+                gender_accuracy = (torch.sigmoid(gender_predictions).round() == gender_labels).float().mean().item()
+
+                # cleanup
+                del age_predictions, gender_predictions, age_labels, gender_labels
+
+                print(f'Age L1 score = {age_l1_score}')
+                print(f'Gender accuracy = {gender_accuracy}')
+                print()
+    
+    torch.save(
+        model.state_dict(),
+        os.path.join('data', 'models', 'multitask experiment number 1', 'model.pth')
+    )
+
+
+
 
 
 if __name__ == '__main__':
