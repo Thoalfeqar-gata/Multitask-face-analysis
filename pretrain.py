@@ -2,18 +2,19 @@ import argparse
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import backbones.backbones as backbones
+import datasets
+import multitask.face_recognition_heads as face_recognition_heads
+import eval, os
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmenter import Augmenter
+import configs.train_davit_ms1mv2_adaface as config # change the config if you want to change the parameters of training
 
-import backbones.backbones as backbones
-import datasets
-import multitask.face_recognition_heads as face_recognition_heads
 from multitask.subnets import FaceRecognitionEmbeddingSubnet
-import eval, os
 
 torch.set_float32_matmul_precision('medium')
 
@@ -271,10 +272,10 @@ def main(args):
     """
     Main training function.
     """
-    pl.seed_everything(args.seed)
+    pl.seed_everything(42)
 
 
-    augmenter = Augmenter(crop_augmentation_prob=args.crop_prob, low_res_augmentation_prob=args.low_res_prop, photometric_augmentation_prob=args.photometric_prop)
+    augmenter = Augmenter(crop_augmentation_prob=args['crop_prob'], low_res_augmentation_prob=args['low_res_prob'], photometric_augmentation_prob=args['photometric_prob'])
 
     train_transform = transforms.Compose([
         transforms.ToPILImage(),
@@ -292,13 +293,13 @@ def main(args):
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    data_module = FaceRecognitionDataModule(train_transform=train_transform, val_transform=val_transform, **vars(args))
+    data_module = FaceRecognitionDataModule(train_transform=train_transform, val_transform=val_transform, **args)
     data_module.setup()
     
-    model = FaceRecognitionModel(num_classes=data_module.num_classes, **vars(args))
+    model = FaceRecognitionModel(num_classes=data_module.num_classes, **args)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=f'checkpoints/{args.backbone_name}_{args.head_name}_{args.dataset_name}',
+        dirpath=f'checkpoints/{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}',
         filename='{epoch}-{train_loss:.5f}',
         save_top_k=1,
         verbose=True,
@@ -308,17 +309,17 @@ def main(args):
 
     trainer = pl.Trainer(
         callbacks=[checkpoint_callback],
-        logger= loggers.TensorBoardLogger(save_dir = f'logs/{args.backbone_name}_{args.head_name}'),
-        max_epochs = args.max_epochs,
+        logger= loggers.TensorBoardLogger(save_dir = f'logs/{args['backbone_name']}_{args['head_name']}'),
+        max_epochs = args['max_epochs'],
         accelerator='auto',
-        precision=args.precision,
+        precision=args['precision'],
         check_val_every_n_epoch=1,
     )
 
-    trainer.fit(model, data_module, ckpt_path=args.resume_from_checkpoint)
+    trainer.fit(model, data_module, ckpt_path=args['resume_from_checkpoint'])
 
     # Save after training
-    output_path = os.path.join('data', 'models', f'{args.backbone_name}_{args.head_name}_{args.dataset_name}', 'model.pth')
+    output_path = os.path.join('data', 'models', f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}', 'model.pth')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     torch.save(
@@ -328,44 +329,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='PyTorch Lightning Face Recognition Training')
-    
-    # Model Hyperparameters
-    parser.add_argument('--backbone_name', type=str, default='ResNet', help='Backbone model name')
-    parser.add_argument('--pretrained', type = int, default = 0, help='Use pretrained weights 0 = False, 1 = True')
-    parser.add_argument('--head_name', type=str, default='arcface', help='Head name (e.g., arcface, cosface, adaface)')
-    parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
-    parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer name (can be either adamw or sgd)')
-    parser.add_argument('--weight_decay', type = float, default = 5e-4, help = 'Weight decay for the optimizer')
-    parser.add_argument('--scheduler', type=str, default='cosine', help='Learning rate scheduler name (can be either cosine or multistep)')
-    parser.add_argument('--scheduler_milestones', type=int, nargs='+', default=[20, 30], help='Milestones for the multistep scheduler (not needed for cosine)')
-    parser.add_argument('--start_factor', type=float, default=0.1, help='Start factor for the linear warmup learning rate scheduler')
-    parser.add_argument('--min_lr', type=float, default=5e-6, help='Minimum learning rate for the cosine scheduler')
-    parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs')
-    parser.add_argument('--margin', type=float, default=0.5, help='Margin for the loss function')
-    parser.add_argument('--scale', type=float, default=64.0, help='Scale for the loss function')
-    parser.add_argument('--h', type=float, default=0.333, help='h parameter for AdaFace loss')
-    parser.add_argument('--t_alpha', type=float, default=1.0, help='t_alpha parameter for AdaFace loss')
+    # Print the config to make sure it is correct
+    for key, value in config.config.items():
+        print(f'{key}: {value}')
 
-    # Training Hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=5e-4, help='Initial learning rate')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
-    parser.add_argument('--max_epochs', type=int, default=40, help='Number of training epochs')
-    parser.add_argument('--precision', type=str, default = '16-mixed', help='Use mixed precision training')
-
-    # Data
-    parser.add_argument('--dataset_name', type=str, required=True, help='Name of the dataset class (e.g., VGGFace_Dataset)')
-    parser.add_argument('--val_datasets', nargs='+', default=None, help='List of validation dataset names')
-    parser.add_argument('--min_num_images_per_class', type = int, default = 20, help = "The minimum number of images per class, classes less than this number are discarded.")
-    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loading workers')
-    parser.add_argument('--crop_prob', type = float, default = 0.2, help = 'The probability of applying random cropping')
-    parser.add_argument('--low_res_prop', type = float, default = 0.2, help = 'The probability of applying low resolution augmentation')
-    parser.add_argument('--photometric_prop', type = float, default = 0.2, help = 'The probability of applying photometric augmentation')
-
-    # System
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from')
-
-    
-    args = parser.parse_args()
-    main(args)
+    main(config.config)
