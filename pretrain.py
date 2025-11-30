@@ -12,7 +12,7 @@ from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmenter import Augmenter
-import configs.train_davit_ms1mv2_adaface as config # change the config if you want to change the parameters of training
+from configs.train_davit_ms1mv2_adaface import config # change the config to change the script's behaviour
 
 from multitask.subnets import FaceRecognitionEmbeddingSubnet
 
@@ -330,7 +330,7 @@ def main(args):
 
 if __name__ == '__main__':
     # Print the config to make sure it is correct
-    for key, value in config.config.items():
+    for key, value in config.items():
         print(f'{key}: {value}')
 
-    main(config.config)
+    main(config)
