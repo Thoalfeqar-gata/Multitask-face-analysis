@@ -16,6 +16,8 @@ from datasets import MultiTaskDataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.models import MultiTaskFaceAnalysisModel
+from configs.train_multitask import config
+
 
 torch.set_float32_matmul_precision('medium')
 
@@ -55,7 +57,7 @@ def main(**kwargs):
     # data preparation
 
     # Face Recognition
-    face_recognition_dataset = datasets.CasiaWebFace_Dataset()
+    face_recognition_dataset = datasets.VGGFace_Dataset()
     face_recognition_dataset.discard_classes(kwargs.get('min_num_images_per_class'))
     num_classes = face_recognition_dataset.num_classes # used later with the face recognition subnet
     face_recognition_dataset = datasets.TransformedDataset(face_recognition_dataset, train_face_rec_transform)
@@ -160,6 +162,7 @@ def main(**kwargs):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
+        print(f"Resuming training from epoch {start_epoch}")
     else:
         start_epoch = 0
 
@@ -375,39 +378,6 @@ def main(**kwargs):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description = 'Multitask training test')
-
-    # Model Hyperparameters
-    parser.add_argument('--backbone_name', type=str, default='swin_t', help='Backbone model name')
-    parser.add_argument('--pretrained_backbone_path', type = str, default = None, help='The path to a pretrained backbone')
-    parser.add_argument('--pretrained_face_recognition_path', type = str, default = None, help = 'The path to the pretrained face recognition subnet')
-    parser.add_argument('--head_type', type=str, default='adaface', help='Head name (e.g., arcface, cosface, adaface)')
-    parser.add_argument('--embedding_dim', type=int, default=512, help='Embedding dimension')
-    parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer name (can be either adamw or sgd)')
-    parser.add_argument('--weight_decay', type = float, default = 5e-4, help = 'Weight decay for the optimizer')
-    parser.add_argument('--scheduler', type=str, default='cosine', help='Learning rate scheduler name (can be either cosine or multistep)')
-    parser.add_argument('--scheduler_milestones', type=int, nargs='+', default=[20, 30], help='Milestones for the multistep scheduler (not needed for cosine)')
-    parser.add_argument('--start_factor', type=float, default=0.1, help='Start factor for the linear warmup learning rate scheduler')
-    parser.add_argument('--min_lr', type=float, default=5e-6, help='Minimum learning rate for the cosine scheduler')
-    parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs')
-    parser.add_argument('--margin', type=float, default=0.5, help='Margin for the loss function')
-    parser.add_argument('--scale', type=float, default=64.0, help='Scale for the loss function')
-    parser.add_argument('--h', type=float, default=0.333, help='h parameter for AdaFace loss')
-    parser.add_argument('--t_alpha', type=float, default=1.0, help='t_alpha parameter for AdaFace loss')
-
-    # Training Hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=5e-4, help='Initial learning rate')
-    parser.add_argument('--batch_size', type = int, default = 256, help = 'The batch size to be used during training')
-    parser.add_argument('--max_epochs', type=int, default=40, help='Number of training epochs')
-    parser.add_argument('--precision', type=str, default = '16-mixed', help='Use mixed precision training')
-
-    # Data
-    parser.add_argument('--min_num_images_per_class', type = int, default = 20, help = "The minimum number of images per class, classes less than this number are discarded.")
-    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loading workers')
-
-    # System
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from')
-
-    args = parser.parse_args()
-    main(**vars(args))
+    for key, value in config.items():
+        print(f'{key}: {value}')
+    main(**config)
