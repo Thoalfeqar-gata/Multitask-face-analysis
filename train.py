@@ -17,6 +17,8 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.models import MultiTaskFaceAnalysisModel
 from configs.train_multitask import config
+from multitask.loss_weighing import DynamicWeightAverage
+
 
 
 torch.set_float32_matmul_precision('medium')
@@ -55,6 +57,7 @@ def main(**kwargs):
     ])
 
     # data preparation
+    generator = torch.Generator().manual_seed(42)
 
     # Face Recognition
     face_recognition_dataset = datasets.VGGFace_Dataset()
@@ -66,14 +69,14 @@ def main(**kwargs):
     # Emotion recognition
     raf_train_dataset = datasets.RAF_Dataset(RAF_subset = 'train')
     if use_validation:
-        raf_train_dataset, raf_val_dataset = torch.utils.data.random_split(raf_train_dataset, lengths = [0.8, 0.2]) # split the train dataset to create a validation dataset
+        raf_train_dataset, raf_val_dataset = torch.utils.data.random_split(raf_train_dataset, lengths = [0.8, 0.2], generator = generator) # split the train dataset to create a validation dataset
         raf_val_dataset = datasets.TransformedDataset(raf_val_dataset, test_transform)
     raf_train_dataset = datasets.TransformedDataset(raf_train_dataset, train_transform)
 
     # Age and gender
     agedb_train_dataset = datasets.AgeDB_Dataset(subset = 'train')
     if use_validation:
-        agedb_train_dataset, agedb_val_dataset = torch.utils.data.random_split(agedb_train_dataset, lengths = [0.8, 0.2])
+        agedb_train_dataset, agedb_val_dataset = torch.utils.data.random_split(agedb_train_dataset, lengths = [0.8, 0.2], generator = generator)
         agedb_val_dataset = datasets.TransformedDataset(agedb_val_dataset, test_transform)
     agedb_train_dataset = datasets.TransformedDataset(agedb_train_dataset, train_transform)
 
@@ -153,6 +156,9 @@ def main(**kwargs):
         raise ValueError(f"Unsupported scheduler: {lr_scheduler_name}")
 
     scaler = torch.amp.GradScaler(device = device)
+    dwa = DynamicWeightAverage(num_tasks = 4)
+    weights = dwa.calculate_weights(avg_losses_current_epoch=None)
+
 
     model.to(device)
     # load the previous checkpoint if it exists:
@@ -239,7 +245,10 @@ def main(**kwargs):
                 gender_rec_loss = F.binary_cross_entropy_with_logits(gender_output,gender_labels)
 
                 ## total_loss
-                total_loss = face_rec_loss + emotion_rec_loss + age_estimation_loss + gender_rec_loss
+                losses = [face_rec_loss, emotion_rec_loss, age_estimation_loss, gender_rec_loss]
+                total_loss = 0
+                for i in range(len(weights)):
+                    total_loss += weights[i] * losses[i]
 
 
             
@@ -261,7 +270,8 @@ def main(**kwargs):
                 age_loss=f"{age_estimation_loss.item():.4f}",
                 gen_loss=f"{gender_rec_loss.item():.4f}",
                 lr=f"{optimizer.param_groups[1]['lr']:.6f}",
-                lr_backbone = f'{optimizer.param_groups[0]['lr']:.6f}'
+                lr_backbone = f'{optimizer.param_groups[0]['lr']:.6f}',
+                weights = f'{weights}'
             )
 
         scheduler.step()
@@ -270,6 +280,7 @@ def main(**kwargs):
         epoch_em_loss = running_emotion_rec_loss / num_emotion_samples
         epoch_age_loss = running_age_estimation_loss / num_age_gender_samples
         epoch_gen_loss = running_gender_rec_loss / num_age_gender_samples
+        weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss]))
         epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss
 
         print(f"\nEpoch {epoch+1} Summary:")
@@ -278,6 +289,7 @@ def main(**kwargs):
         print(f"  Emotion Loss: {epoch_em_loss:.4f}")
         print(f"  Age Loss: {epoch_age_loss:.4f}")
         print(f"  Gender Loss: {epoch_gen_loss:.4f}")
+        print(f"  Weights: {weights}")
 
         checkpoint = {
             'epoch' : epoch,
@@ -372,9 +384,6 @@ def main(**kwargs):
         model.state_dict(),
         os.path.join('data', 'models', 'multitask experiment number 1', 'model.pth')
     )
-
-
-
 
 
 if __name__ == '__main__':

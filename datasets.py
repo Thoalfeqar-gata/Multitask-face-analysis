@@ -453,73 +453,28 @@ class RAF_Dataset(ClassificationDataset):
 
 
 
-class ExpW_Dataset(torch.utils.data.Dataset):
+class ExpW_Dataset(ClassificationDataset):
     """
-    This class doesn't inherit from ClassificationDataset because it rewrites most of its functionality.
-
-    The images must be cropped before used in this dataset.
-
-    The __getitem__ method has to be overriden here.
-
-    The labels in this dataset don't have to be translated.
+        Expression in the wild doesn't need label translation. 
     """
-    def __init__(self, dataset_dir, image_transform = None, seed=100):
-        super().__init__()
-        self.dataset_dir = dataset_dir
-        self.image_transform = image_transform
-        
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'Expression in the wild', 'processed'), image_transform = None, seed=100):
         image_paths = []
-        bboxes = []
         labels = []
 
-        labels_file = os.path.join(dataset_dir, 'label.lst')
+        for file in os.listdir(dataset_dir):
+            if file.endswith('.jpg') and 'not_aligned' not in file: # Exclude images that were not aligned due to the face alignment module not being able to detect a face in them.
+                image_paths.append(file)
+                labels.append(int(file.split('_')[0]))
         
-        with open(labels_file, 'r') as f:
-            lines = f.readlines()
-
-            for line in lines:
-                image_name, face_id_in_image, face_box_top, face_box_left, \
-                face_box_right, face_box_bottom, face_box_confidence, expression_label = line.split(' ')
-
-                image_paths.append(os.path.join('origin', image_name))
-                bboxes.append(
-                    (
-                        int(face_box_top),
-                        int(face_box_left),
-                        int(face_box_bottom),
-                        int(face_box_right)
-                    )
-                )
-                labels.append(int(expression_label))
+        super().__init__(dataset_dir, image_paths, labels, image_transform, subset = None, train_split = 0.7, seed=seed)
         
-        self.image_paths = np.array(image_paths)
-        self.bboxes = np.array(bboxes)
-        self.labels = np.array(labels)
 
-    def __len__(self):
-        return len(self.labels)
-    
-
-    def __getitem__(self, idx):
-        image_path = os.path.join(self.dataset_dir, self.image_paths[idx]) # Full path
-        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
-        image = image[
-            :,
-            self.bboxes[idx][0]:self.bboxes[idx][2],
-            self.bboxes[idx][1]:self.bboxes[idx][3],
-        ]
-        label = self.labels[idx]
-
-        if self.image_transform:
-            image = self.image_transform(image)
-        
-        return image, label
 
 
 
 class AffectNet_Dataset(ClassificationDataset):
     
-    def __init__(self, dataset_dir, image_transform = None, seed=100):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNetCustom'), image_transform = None, seed=100):
         image_paths = []
         labels = []
 
@@ -533,20 +488,41 @@ class AffectNet_Dataset(ClassificationDataset):
             'neutral' : 6
         }
 
-        labels_file = os.path.join(dataset_dir, 'labels.csv')
-        labels_df = pd.read_csv(labels_file)
-
-        for i, row in labels_df.iterrows():
-            image_name = row.iloc[0]
-            label = row.iloc[1]
-            if label == 'contempt': #exclude contempt labels
-                continue
-
-            image_paths.append(image_name)
-            labels.append(self.label_translation[label])
+        dirs = os.listdir(dataset_dir)
+        for dir in dirs:
+            if os.path.isdir(os.path.join(dataset_dir, dir)) and dir != 'contempt': #Exclude contempt
+                files = os.listdir(os.path.join(dataset_dir, dir))
+                for file in files:
+                    if file.endswith('.jpg'):
+                        image_paths.append(os.path.join(dir, file))
+                        labels.append(self.label_translation[dir])
         
         super().__init__(dataset_dir, image_paths, labels, image_transform, subset = None, train_split = 0.7, seed=seed)
 
+
+class EmotionRecognition_Dataset(torch.utils.data.Dataset):
+    def __init__(self, datasets = [RAF_Dataset(), ExpW_Dataset(), AffectNet_Dataset()]):
+        super().__init__()
+        self.image_paths = []
+        self.labels = []
+        self.datasets = datasets
+
+        for dataset in self.datasets:
+            # add the image paths after completing the full path by joining the dataset_dir 
+            self.image_paths.extend([os.path.join(dataset.dataset_dir, image_path) for image_path in dataset.image_paths])
+            self.labels.extend(dataset.labels)
+    
+    def __len__(self):
+        return len(self.labels)
+    
+    def __getitem__(self, index):
+        image = decode_image(self.image_paths[index], mode = torchvision.io.image.ImageReadMode.RGB)
+        label = self.labels[index]
+
+        return image, label
+
+
+        
 
 #############################################
 
@@ -917,7 +893,7 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 
 #############################################
 
-#   Age estimation
+#   Age estimation, Gender Recognition, and Race Estimation
 #   Note: Some of the following datasets return multiple labels.
 #   For example, AgeDB has three labels, one for the identity, one for the age, and one for the gender.
 #   If a dataset has multiple labels, all the labels will be returned by the dataset class.
@@ -990,25 +966,33 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
         return image, (identity, age, gender)
    
 
-#############################################
+class MORPH_Dataset(torch.utils.data.Dataset):
+    """
+        MORPH dataset class.
+        Args:
+            dataset_dir (str): The path to the dataset directory.
+            split (str): The split to use. Can be set to 'train', 'test', or 'validation'.
+    
+    """
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), split = 'train'):
+        self.dataset_dir = dataset_dir
+        self.split = split.capitalize()
 
-#   Gender recognition
+        self.csv_file = os.path.join(dataset_dir, 'Index', f'{self.split}.csv')
+        self.csv_file = pd.read_csv(self.csv_file)
 
-#############################################
+    def __len__(self):
+        return len(self.csv_file)
+    
+    def __getitem__(self, index):
+        sample = self.csv_file.iloc[index]
+        image_name = sample['filename']
+        age_label = float(sample['age']) + 16.0 # This + 16.0 is added because the age labels are scaled down to start from 0 for a person of age 16
+        gender_label = int(sample['gender'])
+        
+        image = decode_image(os.path.join(self.dataset_dir, 'Images', f'{self.split}', image_name), mode = torchvision.io.image.ImageReadMode.RGB)
 
-"""
-    Implement here
-"""
-
-#############################################
-
-#   Race/Ethnicity recognition
-
-#############################################
-
-"""
-    Implement here
-"""
+        return image, (age_label, gender_label)
 
 
 

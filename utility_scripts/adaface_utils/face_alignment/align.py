@@ -1,7 +1,7 @@
 import sys
 import os
 
-from adaface_utils.face_alignment import mtcnn
+from utility_scripts.adaface_utils.face_alignment import mtcnn
 import argparse
 from PIL import Image
 from tqdm import tqdm
