@@ -1055,6 +1055,56 @@ class UTKFace_Dataset(torch.utils.data.Dataset):
         return image, (age, gender, race)
 
 
+class FairFace_Dataset(torch.utils.data.Dataset):
+    """
+        FairFace Dataset: Used for race recognition and gender recognition. It has age labels, but they are categorical, not numerical (ranges instead of fixed numbers).
+        Args:
+            dataset_dir (str): The path to the dataset directory.
+            subset (str): The subset to use. Can be set to 'train' or 'validation'.
+    """
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace'), subset = 'train'):
+        super().__init__()
+        self.dataset_dir = dataset_dir
+        self.image_paths = []
+        self.races = []
+        self.genders = []
+        self.race_translation = {
+            'White' : 0,
+            'Black' : 1,
+            'East Asian' : 2,
+            'Southeast Asian' : 3,
+            'Indian' : 4,
+            'Middle Eastern' : 5,
+            'Latino_Hispanic' : 6,
+        }
+
+        if subset == 'train':
+            self.csv_file = pd.read_csv(os.path.join(self.dataset_dir, 'labels', 'fairface_label_train.csv'))
+        else:
+            self.csv_file = pd.read_csv(os.path.join(self.dataset_dir, 'labels', 'fairface_label_val.csv'))
+         
+        self.images_dir = 'margin 0.25'
+
+    def __len__(self):
+        return len(self.csv_file)
+    
+    def __getitem__(self, index):
+        folder, img_id = self.csv_file.iloc[index]['file'].split('/')
+        full_image_path = os.path.join(self.dataset_dir, self.images_dir, folder, img_id)
+        image = decode_image(full_image_path, mode = torchvision.io.image.ImageReadMode.RGB)
+        race = self.race_translation[self.csv_file.iloc[index]['race']]
+        gender = 1 if self.csv_file.iloc[index]['gender'] == 'Male' else 0
+
+        return image, (gender, race)
+
+
+
+
+
+
+
+
+
 #############################################
 """
     The following class is the main one used in the multitask training setup.
