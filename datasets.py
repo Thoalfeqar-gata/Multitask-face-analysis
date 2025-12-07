@@ -901,6 +901,10 @@ class W300LP_Dataset(torch.utils.data.Dataset):
 #############################################
 
 class AgeDB_Dataset(torch.utils.data.Dataset):
+    """
+        AgeDB Dataset: Used for age estimation, gender recognition, and face recognition tasks
+    """
+
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), 
                  image_transform = None, subset = 'train',  
         ):
@@ -968,16 +972,23 @@ class AgeDB_Dataset(torch.utils.data.Dataset):
 
 class MORPH_Dataset(torch.utils.data.Dataset):
     """
-        MORPH dataset class.
+        MORPH dataset class: Used for age estimation and gender recognition tasks.
         Args:
             dataset_dir (str): The path to the dataset directory.
             split (str): The split to use. Can be set to 'train', 'test', or 'validation'.
+            use_default_transform  (bool): Whether to use the default preprocessing transform, which simply applies center cropping and resizing
     
     """
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), split = 'train'):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), split = 'train', use_default_transform = True):
         self.dataset_dir = dataset_dir
         self.split = split.capitalize()
-
+        self.use_default_transform = use_default_transform
+        if self.use_default_transform:
+            self.transform = transforms.Compose([ # The default transform of center cropping to remove the unnecessary background information
+                    transforms.ToPILImage(),
+                    transforms.CenterCrop(size = (140, 140)),
+                ])
+            
         self.csv_file = os.path.join(dataset_dir, 'Index', f'{self.split}.csv')
         self.csv_file = pd.read_csv(self.csv_file)
 
@@ -991,9 +1002,57 @@ class MORPH_Dataset(torch.utils.data.Dataset):
         gender_label = int(sample['gender'])
         
         image = decode_image(os.path.join(self.dataset_dir, 'Images', f'{self.split}', image_name), mode = torchvision.io.image.ImageReadMode.RGB)
-
+        
+        if self.use_default_transform:
+            image = self.transform(image)
+        
         return image, (age_label, gender_label)
 
+
+class UTKFace_Dataset(torch.utils.data.Dataset):
+    """
+    
+        UTKFace Dataset: Used for age estimation, gender recognition, and race/ethnicity recognition
+    
+    """
+
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'UTKFace dataset', 'UTKFace')):
+        super().__init__()
+        self.dataset_dir = dataset_dir
+        self.image_paths = []
+        self.ages = []
+        self.genders = []
+        self.races = []
+
+        for file in os.listdir(self.dataset_dir):
+            if file.endswith('.jpg'):
+                splits = file.split(sep = '_')
+
+                if len(splits) != 4: # A few images are annotated incorrectly. Skip them.
+                    continue
+
+                age, gender, race, _ = splits
+                age = float(age)
+                if age > 100: # Only keep people younger than 100
+                    continue
+                gender = 1 - int(gender) # the original gender label is set so that 1 = female, 0 = male. We want it to be 1 = male, 0 = female to match other datasets.
+                race = int(race)
+                
+                self.image_paths.append(file)
+                self.ages.append(age)
+                self.genders.append(gender)
+                self.races.append(race)
+    
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, index):
+        image = decode_image(os.path.join(self.dataset_dir, self.image_paths[index]), mode = torchvision.io.ImageReadMode.RGB)
+        age = self.ages[index]
+        gender = self.genders[index]
+        race = self.races[index]
+
+        return image, (age, gender, race)
 
 
 #############################################
