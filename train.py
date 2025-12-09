@@ -60,7 +60,7 @@ def main(**kwargs):
     generator = torch.Generator().manual_seed(42)
 
     # Face Recognition
-    face_recognition_dataset = datasets.VGGFace_Dataset()
+    face_recognition_dataset = datasets.MS1MV2_Dataset()
     face_recognition_dataset.discard_classes(kwargs.get('min_num_images_per_class'))
     num_classes = face_recognition_dataset.num_classes # used later with the face recognition subnet
     face_recognition_dataset = datasets.TransformedDataset(face_recognition_dataset, train_face_rec_transform)

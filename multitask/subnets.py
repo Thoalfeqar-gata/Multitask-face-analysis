@@ -46,7 +46,7 @@ class AgeEstimationSubnet(nn.Module):
         self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
         self.cbam = CBAM(channels=512)
         self.head = nn.Sequential( # A simple regression head
-            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 ->1x1x512
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 ->1x1x512
             nn.Flatten(), # 1x1x512 -> 512
             nn.ReLU(),
             nn.Linear(in_features = 512, out_features = 256, bias = True),
@@ -67,7 +67,7 @@ class GenderRecognitionSubnet(nn.Module):
         self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
         self.cbam = CBAM(channels=512)
         self.head = nn.Sequential( # A simple binary classification head
-            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
             nn.ReLU(),
             nn.Linear(in_features = 512, out_features = 256, bias = True),
@@ -89,7 +89,7 @@ class EmotionRecognitionSubnet(nn.Module):
         self.fusion = MultiScaleFusion(out_channels=[47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
         self.cbam = CBAM(channels=512)
         self.head = nn.Sequential(
-            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
             nn.ReLU(),
             nn.Linear(in_features = 512, out_features = 256, bias = True),
@@ -97,6 +97,25 @@ class EmotionRecognitionSubnet(nn.Module):
             nn.Linear(in_features = 256, out_features = num_classes, bias = True),
         )
 
+    def forward(self, multiscale_features):
+        x = self.fusion(multiscale_features)
+        x = self.cbam(x)
+        return self.head(x)
+
+
+class RaceRecognitionSubnet(nn.Module):
+    def __init__(self, num_classes = 7, transformer_embedding_dim = 96):
+        self.fusion = MultiScaleFusion(out_channels = [47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
+        self.cbam = CBAM(channels = 512)
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.Flatten(), # 1x1x512 -> 512
+            nn.ReLU(),
+            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.ReLU(),
+            nn.Linear(in_features = 256, out_features = num_classes, bias = True),
+        )
+    
     def forward(self, multiscale_features):
         x = self.fusion(multiscale_features)
         x = self.cbam(x)

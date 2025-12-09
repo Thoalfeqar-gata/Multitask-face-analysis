@@ -1012,7 +1012,13 @@ class MORPH_Dataset(torch.utils.data.Dataset):
 class UTKFace_Dataset(torch.utils.data.Dataset):
     """
     
-        UTKFace Dataset: Used for age estimation, gender recognition, and race/ethnicity recognition
+        UTKFace Dataset: Used for age estimation, gender recognition, and race/ethnicity recognition. 
+        Note: The race labels are only:
+            0 : White
+            1 : Black
+            2 : Asian
+            3 : Indian
+            4 : Others
     
     """
 
