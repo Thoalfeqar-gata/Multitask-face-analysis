@@ -11,7 +11,7 @@ from torchvision import transforms
 from torch.optim import lr_scheduler
 from augmenter import Augmenter
 from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
-                              EmotionRecognitionSubnet
+                              EmotionRecognitionSubnet, RaceRecognitionSubnet
 from datasets import MultiTaskDataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -64,21 +64,23 @@ def main(**kwargs):
     face_recognition_dataset.discard_classes(kwargs.get('min_num_images_per_class'))
     num_classes = face_recognition_dataset.num_classes # used later with the face recognition subnet
     face_recognition_dataset = datasets.TransformedDataset(face_recognition_dataset, train_face_rec_transform)
-
+    
 
     # Emotion recognition
-    raf_train_dataset = datasets.RAF_Dataset(RAF_subset = 'train')
+    emotion_train_dataset = datasets.EmotionRecognition_Dataset() # A combination of RAF_Dataset, ExpW_Dataset, and AffectNet_Dataset
     if use_validation:
-        raf_train_dataset, raf_val_dataset = torch.utils.data.random_split(raf_train_dataset, lengths = [0.8, 0.2], generator = generator) # split the train dataset to create a validation dataset
-        raf_val_dataset = datasets.TransformedDataset(raf_val_dataset, test_transform)
-    raf_train_dataset = datasets.TransformedDataset(raf_train_dataset, train_transform)
+        emotion_train_dataset, emotion_val_dataset = torch.utils.data.random_split(emotion_train_dataset, lengths = [0.9, 0.1], generator = generator) # split the train dataset to create a validation dataset
+        emotion_val_dataset = datasets.TransformedDataset(emotion_val_dataset, test_transform)
+    emotion_train_dataset = datasets.TransformedDataset(emotion_train_dataset, train_transform)
 
-    # Age and gender
+    # Age, Gender, and Race
     agedb_train_dataset = datasets.AgeDB_Dataset(subset = 'train')
     if use_validation:
         agedb_train_dataset, agedb_val_dataset = torch.utils.data.random_split(agedb_train_dataset, lengths = [0.8, 0.2], generator = generator)
         agedb_val_dataset = datasets.TransformedDataset(agedb_val_dataset, test_transform)
     agedb_train_dataset = datasets.TransformedDataset(agedb_train_dataset, train_transform)
+
+    
 
     batch_size = kwargs.get('batch_size')
     batch_sizes = [0.5, 0.25, 0.25] # default ratios for each task/dataset
@@ -87,14 +89,14 @@ def main(**kwargs):
 
     
     train_dataloader = datasets.MultiTaskDataLoader(
-        datasets = [face_recognition_dataset, raf_train_dataset, agedb_train_dataset],
+        datasets = [face_recognition_dataset, emotion_train_dataset, agedb_train_dataset],
         batch_sizes = batch_sizes,
         num_workers = num_workers
     )
 
     if use_validation:
-        raf_val_dataloader = torch.utils.data.DataLoader(
-            dataset = raf_val_dataset,
+        emotion_val_dataloader = torch.utils.data.DataLoader(
+            dataset = emotion_val_dataset,
             batch_size = 32,
             shuffle = False,
             num_workers = num_workers,
@@ -330,7 +332,7 @@ def main(**kwargs):
                 # Emotion recognition
                 predictions = []
                 labels = []
-                for image, label in raf_val_dataloader:
+                for image, label in emotion_val_dataloader:
                     image = image.to('cuda', non_blocking = True)
                     label = label.to('cuda', non_blocking = True)
 
