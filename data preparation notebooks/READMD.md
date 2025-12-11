@@ -1,0 +1,2 @@
+This folder contains notebooks that transform every dataset into a standard format and applied any necessary preprocessing.
+Images from each datasets are organized into an Images folder, and label information is put into a labels.csv file.
