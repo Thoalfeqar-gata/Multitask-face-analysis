@@ -109,3 +109,41 @@ class CPLFW(BaseFaceVerificationClass):
 class LFW(BaseFaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'lfw')):
         super().__init__(dataset_dir)
+
+
+###################################
+
+#       Emotion Recognition
+
+###################################
+
+class BaseEmotionRecognitionClass(BaseDatasetClass):
+    """
+        The base class for all emotion recognition datasets.
+    """
+    def __init__(self, dataset_dir, subset = None):
+        super().__init__(dataset_dir)
+        if 'split' in self.labels_df.columns and subset != None: # will be used mainly with RAFDB
+            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+            self.labels_df.reset_index(drop = True, inplace = True)
+    
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image_path = os.path.join(self.images_dir, filename)
+        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
+        label = self.labels_df['label'][idx]
+
+        return image, label
+
+class AffectNet(BaseEmotionRecognitionClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet')):
+        super().__init__(dataset_dir)
+
+class ExpressionInTheWild(BaseEmotionRecognitionClass): # This dataset might be removed later since it is low quality and has many label mistakes
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'Expression in the wild')):
+        super().__init__(dataset_dir)
+
+class RAFDB(BaseEmotionRecognitionClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train'):
+        super().__init__(dataset_dir, subset = subset)
