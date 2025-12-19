@@ -64,3 +64,48 @@ class VGGFace(BaseFaceRecognitionClass):
 class CasiabWebFace(BaseFaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface')):
         super().__init__(dataset_dir)
+
+
+
+###################################
+
+#       Face Verification
+
+###################################
+
+class BaseFaceVerificationClass(BaseDatasetClass):
+    """
+        The base class for all face verification datasets.
+    """
+    def __init__(self, dataset_dir):
+        super().__init__(dataset_dir)
+    
+    def __getitem__(self, idx):
+        image1 = self.labels_df['image1'][idx]
+        image2 = self.labels_df['image2'][idx]
+        same = self.labels_df['same'][idx]
+
+        image1 = decode_image(os.path.join(self.images_dir, image1), mode = torchvision.io.image.ImageReadMode.RGB)
+        image2 = decode_image(os.path.join(self.images_dir, image2), mode = torchvision.io.image.ImageReadMode.RGB)
+
+        return (image1, image2), same
+
+class CFPFP(BaseFaceVerificationClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_fp')):
+        super().__init__(dataset_dir)
+
+class CFPFF(BaseFaceVerificationClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_ff')):
+        super().__init__(dataset_dir)
+
+class CALFW(BaseFaceVerificationClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'calfw')):
+        super().__init__(dataset_dir)
+
+class CPLFW(BaseFaceVerificationClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cplfw')):
+        super().__init__(dataset_dir)
+
+class LFW(BaseFaceVerificationClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'lfw')):
+        super().__init__(dataset_dir)
