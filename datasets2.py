@@ -30,7 +30,7 @@ class BaseDatasetClass(torch.utils.data.Dataset):
 
 ###################################
 
-class BaseFaceRecognitionClass(BaseDatasetClass):
+class FaceRecognitionClass(BaseDatasetClass):
     """
         The base class for all face recognition datasets.
     """
@@ -46,22 +46,24 @@ class BaseFaceRecognitionClass(BaseDatasetClass):
         image_path = os.path.join(self.images_dir, filename)
         image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
         label = self.labels_df['label'][idx]
-
+        label = {
+            'face recognition': label
+        }
         return image, label
 
-class Glint360k(BaseFaceRecognitionClass):
+class Glint360k(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k')):
         super().__init__(dataset_dir)
 
-class MS1MV2(BaseFaceRecognitionClass):
+class MS1MV2(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'ms1mv2')):
         super().__init__(dataset_dir)
 
-class VGGFace(BaseFaceRecognitionClass):
+class VGGFace(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face')):
         super().__init__(dataset_dir)
 
-class CasiabWebFace(BaseFaceRecognitionClass):
+class CasiabWebFace(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface')):
         super().__init__(dataset_dir)
 
@@ -73,7 +75,7 @@ class CasiabWebFace(BaseFaceRecognitionClass):
 
 ###################################
 
-class BaseFaceVerificationClass(BaseDatasetClass):
+class FaceVerificationClass(BaseDatasetClass):
     """
         The base class for all face verification datasets.
     """
@@ -90,23 +92,23 @@ class BaseFaceVerificationClass(BaseDatasetClass):
 
         return (image1, image2), same
 
-class CFPFP(BaseFaceVerificationClass):
+class CFPFP(FaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_fp')):
         super().__init__(dataset_dir)
 
-class CFPFF(BaseFaceVerificationClass):
+class CFPFF(FaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cfp_ff')):
         super().__init__(dataset_dir)
 
-class CALFW(BaseFaceVerificationClass):
+class CALFW(FaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'calfw')):
         super().__init__(dataset_dir)
 
-class CPLFW(BaseFaceVerificationClass):
+class CPLFW(FaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'cplfw')):
         super().__init__(dataset_dir)
 
-class LFW(BaseFaceVerificationClass):
+class LFW(FaceVerificationClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'lfw')):
         super().__init__(dataset_dir)
 
@@ -117,7 +119,7 @@ class LFW(BaseFaceVerificationClass):
 
 ###################################
 
-class BaseEmotionRecognitionClass(BaseDatasetClass):
+class EmotionRecognitionClass(BaseDatasetClass):
     """
         The base class for all emotion recognition datasets.
     """
@@ -133,17 +135,91 @@ class BaseEmotionRecognitionClass(BaseDatasetClass):
         image_path = os.path.join(self.images_dir, filename)
         image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
         label = self.labels_df['label'][idx]
-
+        label = {
+            'emotion': label
+        }
         return image, label
 
-class AffectNet(BaseEmotionRecognitionClass):
+class AffectNet(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet')):
         super().__init__(dataset_dir)
 
-class ExpressionInTheWild(BaseEmotionRecognitionClass): # This dataset might be removed later since it is low quality and has many label mistakes
+class ExpressionInTheWild(EmotionRecognitionClass): # This dataset might be removed later since it is low quality and has many label mistakes
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'Expression in the wild')):
         super().__init__(dataset_dir)
 
-class RAFDB(BaseEmotionRecognitionClass):
+class RAFDB(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train'):
         super().__init__(dataset_dir, subset = subset)
+
+
+###################################
+
+#       Age, Gender, and Race Recognition
+
+###################################
+
+class AgeDB(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB')):
+        super().__init__(dataset_dir)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+        age = self.labels_df['age'][idx]
+        gender = self.labels_df['gender'][idx]
+        label = {
+            'age': age,
+            'gender': gender
+        }
+        return image, label
+
+class MORPH(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH')):
+        super().__init__(dataset_dir)
+
+    def __getitem__(self, index):
+        filename = self.labels_df['filename'][index]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+        age = self.labels_df['age'][index]
+        gender = self.labels_df['gender'][index]
+        label = {
+            'age': age,
+            'gender': gender
+        }
+        return image, label
+
+
+class UTKFace(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'UTKFace')):
+        super().__init__(dataset_dir)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+        age = self.labels_df['age'][idx]
+        gender = self.labels_df['gender'][idx]
+        race = self.labels_df['race'][idx]
+        label = {
+            'age': age,
+            'gender': gender,
+            'race': race
+        }
+        return image, label
+
+
+class FairFace(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace')):
+        super().__init__(dataset_dir)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+        gender = self.labels_df['gender'][idx]
+        race = self.labels_df['race'][idx]
+
+        label = {
+            'gender': gender,
+            'race': race
+        }
+        return image, label
