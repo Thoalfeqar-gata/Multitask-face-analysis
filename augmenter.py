@@ -13,7 +13,7 @@ class Augmenter():
         self.low_res_augmentation_prob = low_res_augmentation_prob
 
         self.random_resized_crop = transforms.RandomResizedCrop(size=(112, 112),
-                                                                scale=(0.2, 1.0),
+                                                                scale=(0.5, 1.0),
                                                                 ratio=(0.75, 1.3333333333333333))
         self.photometric = transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0)
 
