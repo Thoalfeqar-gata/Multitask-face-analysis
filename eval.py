@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torchvision.transforms import v2
 import torch.nn.functional as F
-import datasets
+import datasets2
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
 
@@ -76,11 +76,11 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
     ])
 
     test_datasets_map = {
-        'LFW': datasets.LFW_Dataset,
-        'CPLFW': datasets.CPLFW_Dataset,
-        'CALFW': datasets.CALFW_Dataset,
-        'CFP-FP': datasets.CFPFP_Dataset,
-        'CFP-FF': datasets.CFPFF_Dataset
+        'LFW': datasets2.LFW,
+        'CPLFW': datasets2.CPLFW,
+        'CALFW': datasets2.CALFW,
+        'CFP-FP': datasets2.CFPFP,
+        'CFP-FF': datasets2.CFPFF
     }
     test_datasets = []
     loaded_dataset_names = []

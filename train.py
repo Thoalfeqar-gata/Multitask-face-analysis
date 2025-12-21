@@ -7,7 +7,7 @@ import datasets
 import multitask.face_recognition_heads as face_recognition_heads
 import eval, os, numpy as np
 from torch.utils.data import DataLoader
-from torchvision import transforms
+from torchvision.transforms import v2
 from torch.optim import lr_scheduler
 from augmenter import Augmenter
 from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
@@ -32,28 +32,32 @@ def main(**kwargs):
     checkpoint_path = kwargs.get('resume_from_checkpoint')
 
     # train and test transforms
-    train_face_rec_transform = transforms.Compose([ # for face recognition during training.
-        transforms.ToPILImage(),
+    train_face_rec_transform = v2.Compose([ # for face recognition during training.
+        v2.ToPILImage(),
         Augmenter(crop_augmentation_prob=0.2, low_res_augmentation_prob=0.2, photometric_augmentation_prob=0.2),
-        transforms.Resize((112, 112)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        v2.Resize((112, 112)),
+        v2.RandomHorizontalFlip(),
+        v2.ToTensor(),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    train_transform = transforms.Compose([ # for other datasets during training.
-        transforms.ToPILImage(),
-        transforms.Resize((112, 112)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    train_transform = v2.Compose([ # for other datasets during training.
+        v2.ToPILImage(),
+        v2.Resize((112, 112)),
+        v2.RandomHorizontalFlip(),
+        v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+        v2.RandomRotation(degrees=10),
+        v2.RandomGrayscale(p=0.1),
+        v2.RandomApply([v2.GaussianBlur(kernel_size=3, sigma=(0.1, 2))], p=0.1),
+        v2.ToTensor(),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    test_transform = transforms.Compose([ # for testing on datasets other than face recognition.
-        transforms.ToPILImage(),
-        transforms.Resize((112, 112)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    test_transform = v2.Compose([ # for testing on datasets other than face recognition.
+        v2.ToPILImage(),
+        v2.Resize((112, 112)),
+        v2.ToTensor(),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
     # data preparation
