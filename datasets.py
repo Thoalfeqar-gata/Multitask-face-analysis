@@ -193,11 +193,11 @@ class EmotionRecognitionClass(BaseDatasetClass):
 
 class AffectNet(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), transform = None):
-        super().__init__(dataset_dir, transform)
+        super().__init__(dataset_dir, transform = transform)
 
 class ExpressionInTheWild(EmotionRecognitionClass): # This dataset might be removed later since it is low quality and has many label mistakes
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'Expression in the wild'), transform = None):
-        super().__init__(dataset_dir, transform)
+        super().__init__(dataset_dir, transform = transform)
 
 class RAFDB(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None):
@@ -277,9 +277,12 @@ class UTKFace(BaseDatasetClass):
 
 
 class FairFace(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace'), transform = None):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace'), transform = None, subset = None):
         super().__init__(dataset_dir, transform)
-    
+        if subset != None: # Can be either 'train' or 'test'
+            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+            self.labels_df.reset_index(drop = True, inplace = True)
+
     def __getitem__(self, idx):
         filename = self.labels_df['filename'][idx]
         image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
