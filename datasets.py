@@ -6,7 +6,9 @@ import os
 import numpy as np
 import pandas as pd
 from torchvision.io import decode_image
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
+
+
 def get_default_labels():
     return {
         'face_recognition' : -1,
@@ -16,28 +18,60 @@ def get_default_labels():
         'race' : -1
     }
 
-def create_balanced_dataset(datasets_list):
+def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None):
     """
-    Repeats smaller datasets so that their size roughly matches 
-    the size of the largest dataset in the list.
+    Args:
+        epoch_size (int): How many images to sample per epoch. 
+                          If None, defaults to the size of the largest dataset (5.8M).
+                          Recommend setting this to ~500,000 for frequent validation.
     """
-    max_size = max([len(ds) for ds in datasets_list])
-    print(f"Largest dataset size: {max_size}")
-
-    balanced_list = []
+    # 1. Concatenate naturally (NO repetition)
+    unified_dataset = ConcatDataset(datasets_list)
     
-    for ds in datasets_list:
-        ds_len = len(ds)
+    # 2. Calculate weights for each dataset
+    dataset_counts = [len(ds) for ds in datasets_list]
+    total_count = sum(dataset_counts)
+    
+    # Calculate weight per sample: 1.0 / count
+    # This ensures that (count * weight) is constant for all datasets
+    dataset_weights = [1.0 / count for count in dataset_counts]
+    
+    print("Dataset weights:", dataset_weights)
+    
+    # 3. Assign a weight to EVERY sample in the unified dataset
+    # This creates a long vector of weights matching the unified_dataset length
+    sample_weights = []
+    for i, count in enumerate(dataset_counts):
+        # Extend the list by the number of items in that dataset
+        sample_weights.extend([dataset_weights[i]] * count)
         
-        repeat_factor = int(max_size / ds_len)
-        if repeat_factor < 1: 
-            repeat_factor = 1
-            
-        print(f"Dataset {type(ds).__name__}: Original={ds_len}, Repeating {repeat_factor} times.")
+    sample_weights = torch.DoubleTensor(sample_weights)
+    
+    # 4. Define Epoch Size
+    # If we don't set this, an 'epoch' is just the sum of all raw lengths (~6.5M)
+    # But we likely want to define a 'Virtual Epoch' to check validation often.
+    if epoch_size is None:
+        epoch_size = len(unified_dataset)
         
-        balanced_list.extend([ds] * repeat_factor)
-        
-    return ConcatDataset(balanced_list)
+    # 5. Create the Sampler
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=epoch_size,
+        replacement=True # Crucial: Allows picking samples multiple times
+    )
+    
+    # 6. Create Loader
+    # Note: shuffle must be False when using a sampler! It already shuffles everything nicely.
+    loader = DataLoader(
+        unified_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        sampler=sampler, 
+        pin_memory=True
+    )
+    
+    return loader
+
 
 
 class BaseDatasetClass(torch.utils.data.Dataset):
@@ -195,10 +229,6 @@ class AffectNet(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), transform = None):
         super().__init__(dataset_dir, transform = transform)
 
-class ExpressionInTheWild(EmotionRecognitionClass): # This dataset might be removed later since it is low quality and has many label mistakes
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'Expression in the wild'), transform = None):
-        super().__init__(dataset_dir, transform = transform)
-
 class RAFDB(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None):
         super().__init__(dataset_dir, subset = subset, transform = transform)
@@ -231,8 +261,11 @@ class AgeDB(BaseDatasetClass):
         return image, label
 
 class MORPH(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'train'):
         super().__init__(dataset_dir, transform)
+        if subset != None: # Can be 'train', 'test' or 'validation'
+            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+            self.labels_df.reset_index(drop = True, inplace = True)
 
     def __getitem__(self, index):
         filename = self.labels_df['filename'][index]

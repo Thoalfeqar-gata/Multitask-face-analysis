@@ -70,8 +70,8 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
     backbone.eval()
 
     image_transform = v2.Compose([
-        v2.ToImage(), 
-        v2.ToDtype(torch.float32, scale=True), # To [0, 1]
+        v2.ToPILImage(),
+        v2.ToTensor(),
         v2.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5]) # To [-1, 1]
     ])
 
@@ -80,7 +80,9 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
         'CPLFW': datasets.CPLFW,
         'CALFW': datasets.CALFW,
         'CFP-FP': datasets.CFPFP,
-        'CFP-FF': datasets.CFPFF
+        'CFP-FF': datasets.CFPFF,
+        'AgeDB30' : datasets.AgeDB30,
+        'VGG2FP' : datasets.VGG2FP
     }
     test_datasets = []
     loaded_dataset_names = []
