@@ -70,24 +70,18 @@ def main(**kwargs):
     # training
     train_db_list = [
         # Face recognition
-        db.MS1MV2(transform=train_face_rec_transform),
+        db.MS1MV2(transform=train_face_rec_transform, return_name = True),
 
         # emotion recognition
-        db.AffectNet(transform = train_transform), 
-        db.RAFDB(transform = train_transform, subset = 'train'),
+        db.AffectNet(transform = train_transform, subset = 'train', return_name = True), 
+        db.RAFDB(transform = train_transform, subset = 'train', return_name = True),
 
         # Age, Gender, and Race
-        db.FairFace(transform = train_transform, subset = 'train'),
-        db.UTKFace(transform = train_transform, subset = 'train'),
-        db.MORPH(transform = train_transform, subset = 'train')
-    ]
-
-    # testing
-    raf_test_db = db.RAFDB(transform = test_transform, subset = 'test')
-    fairface_test_db = db.FairFace(transform = test_transform, subset = 'test')
-    utkface_test_db = db.UTKFace(transform = test_transform, subset = 'test')
-    morph_test_db = db.MORPH(transform = test_transform, subset = 'test')
-
+        db.FairFace(transform = train_transform, subset = 'train', return_name = True), # gender and race
+        db.UTKFace(transform = train_transform, subset = 'train', return_name = True), # age, gender, race
+        db.MORPH(transform = train_transform, subset = 'train', return_name = True) # age, gender
+    ]    
+    
     batch_size = kwargs.get('batch_size')
     num_workers = kwargs.get('num_workers')
 
@@ -96,6 +90,38 @@ def main(**kwargs):
         batch_size = batch_size, 
         num_workers = num_workers,
     )
+
+
+    if use_validation:
+        # validation
+        fairface_test_db = torch.utils.data.DataLoader(
+            dataset = db.FairFace(transform = test_transform, subset = 'test'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
+        )
+
+        affectnet_validation_db = torch.utils.data.DataLoader(
+            dataset = db.AffectNet(transform = test_transform, subset = 'test'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
+        )
+
+        morph_test_db = torch.utils.data.DataLoader(
+            dataset = db.MORPH(transform = test_transform, subset = 'validation'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
+        )
+
+        print('fairface lenght: ', len(fairface_test_db) * 64)
+        print('affectnet lenght: ', len(affectnet_validation_db) * 64)
+        print('morph lenght: ', len(morph_test_db) * 64)
+
 
 
     print(len(train_loader))
@@ -125,7 +151,7 @@ def main(**kwargs):
     4 : 'Other'
     }
 
-    plt.figure(figsize=(14, 8), dpi = 150)
+    plt.figure(figsize=(24, 8), dpi = 150)
     for i in range(16):
         idx = np.random.randint(0, len(images))
         image = images[idx]
@@ -152,6 +178,10 @@ def main(**kwargs):
         race_label = labels['race'][idx]
         if race_label != -1:
             label_text += f'race: {race_translation[int(race_label)]} '
+        
+        if 'dataset_name' in labels:
+            label_text += f'dataset: {labels["dataset_name"][idx]}'
+
 
         plt.subplot(4, 4, i+1)
         plt.imshow(image.permute(1, 2, 0))

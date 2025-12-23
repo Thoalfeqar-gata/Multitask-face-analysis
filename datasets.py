@@ -9,21 +9,12 @@ from torchvision.io import decode_image
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 
-def get_default_labels():
-    return {
-        'face_recognition' : -1,
-        'emotion' : -1,
-        'age' : -1,
-        'gender' : -1,
-        'race' : -1
-    }
-
 def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None):
     """
     Args:
+        datasets_list (list): A list of the datasets to be combined and turned into a dataloader.
         epoch_size (int): How many images to sample per epoch. 
-                          If None, defaults to the size of the largest dataset (5.8M).
-                          Recommend setting this to ~500,000 for frequent validation.
+                          
     """
     # 1. Concatenate naturally (NO repetition)
     unified_dataset = ConcatDataset(datasets_list)
@@ -79,15 +70,33 @@ class BaseDatasetClass(torch.utils.data.Dataset):
         The base dataset class for all datasets
     """
 
-    def __init__(self, dataset_dir, transform = None):
+    def __init__(self, dataset_dir, transform = None, return_name = False):
         super().__init__()
 
         self.images_dir = os.path.join(dataset_dir, 'Images')
         self.labels_df = pd.read_csv(os.path.join(dataset_dir, 'labels.csv'))
         self.transform = transform
+        self.return_name = return_name
+
+    def __getitem__(self, idx):
+        raise NotImplementedError
     
     def __len__(self):
         return len(self.labels_df)
+
+    # used for getting the default labels for each task and, optionally, the name of the database
+    def get_default_labels(self):
+        label = {
+            'face_recognition' : -1,
+            'emotion' : -1,
+            'age' : -1,
+            'gender' : -1,
+            'race' : -1
+        }
+        if self.return_name:
+            label['dataset_name'] = self.__class__.__name__
+        return label
+
 
 
 ###################################
@@ -101,8 +110,8 @@ class FaceRecognitionClass(BaseDatasetClass):
         The base class for all face recognition datasets.
     """
 
-    def __init__(self, dataset_dir, transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir, transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
     
     def number_of_classes(self):
         return len(self.labels_df['label'].unique())
@@ -115,26 +124,26 @@ class FaceRecognitionClass(BaseDatasetClass):
         if self.transform:
             image = self.transform(image)
 
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['face_recognition'] = self.labels_df['label'][idx]
 
         return image, label
 
 class Glint360k(FaceRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k'), transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
 
 class MS1MV2(FaceRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'ms1mv2'), transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'ms1mv2'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
 
 class VGGFace(FaceRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face'), transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
 
 class CasiabWebFace(FaceRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface'), transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
 
 
 
@@ -205,8 +214,8 @@ class EmotionRecognitionClass(BaseDatasetClass):
     """
         The base class for all emotion recognition datasets.
     """
-    def __init__(self, dataset_dir, subset = None, transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir, subset = None, transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
         if 'split' in self.labels_df.columns and subset != None: # will be used mainly with RAFDB
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
@@ -220,18 +229,18 @@ class EmotionRecognitionClass(BaseDatasetClass):
         if self.transform:
             image = self.transform(image)
 
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['emotion'] = self.labels_df['label'][idx]
 
         return image, label
 
 class AffectNet(EmotionRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), transform = None):
-        super().__init__(dataset_dir, transform = transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), subset = 'train', transform = None, **kwargs):
+        super().__init__(dataset_dir, subset = subset, transform = transform, **kwargs)
 
 class RAFDB(EmotionRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None):
-        super().__init__(dataset_dir, subset = subset, transform = transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None, **kwargs):
+        super().__init__(dataset_dir, subset = subset, transform = transform, **kwargs)
 
 
 ###################################
@@ -241,8 +250,8 @@ class RAFDB(EmotionRecognitionClass):
 ###################################
 
 class AgeDB(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), transform = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'AgeDB'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
     
     def __getitem__(self, idx):
         filename = self.labels_df['filename'][idx]
@@ -254,15 +263,15 @@ class AgeDB(BaseDatasetClass):
         age = self.labels_df['age'][idx]
         gender = self.labels_df['gender'][idx]
 
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['age'] = age
         label['gender'] = gender
 
         return image, label
 
 class MORPH(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'train'):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'train', **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
         if subset != None: # Can be 'train', 'test' or 'validation'
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
@@ -276,7 +285,7 @@ class MORPH(BaseDatasetClass):
 
         age = self.labels_df['age'][index]
         gender = self.labels_df['gender'][index]
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['age'] = age
         label['gender'] = gender
 
@@ -284,8 +293,8 @@ class MORPH(BaseDatasetClass):
 
 
 class UTKFace(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'UTKFace'), transform = None, subset = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'UTKFace'), transform = None, subset = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
         if subset != None: # Can be either 'train' or 'test'
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
@@ -300,7 +309,7 @@ class UTKFace(BaseDatasetClass):
         age = self.labels_df['age'][idx]
         gender = self.labels_df['gender'][idx]
         race = self.labels_df['race'][idx]
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['age'] = age
         label['gender'] = gender
         label['race'] = race
@@ -310,8 +319,8 @@ class UTKFace(BaseDatasetClass):
 
 
 class FairFace(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace'), transform = None, subset = None):
-        super().__init__(dataset_dir, transform)
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'FairFace'), transform = None, subset = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
         if subset != None: # Can be either 'train' or 'test'
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
@@ -325,7 +334,7 @@ class FairFace(BaseDatasetClass):
 
         gender = self.labels_df['gender'][idx]
         race = self.labels_df['race'][idx]
-        label = get_default_labels()
+        label = self.get_default_labels()
         label['gender'] = gender
         label['race'] = race
 
