@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import backbones.backbones as backbones
 import multitask.face_recognition_heads as face_recognition_heads
 from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
-                              EmotionRecognitionSubnet
+                              EmotionRecognitionSubnet, RaceRecognitionSubnet
+
 
 
 class MultiTaskFaceAnalysisModel(nn.Module):
@@ -92,6 +93,10 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         self.gender_recognition_subnet = GenderRecognitionSubnet(
             transformer_embedding_dim=self.transformer_embedding_dim
         )
+
+        self.race_recognition_subnet = RaceRecognitionSubnet(
+            transformer_embedding_dim=self.transformer_embedding_dim
+        )
     
 
     def forward(self, x):
@@ -109,8 +114,11 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         
         # Gender Recognition
         gender_output = self.gender_recognition_subnet(multiscale_features)
+
+        # Race Recognition
+        race_output = self.race_recognition_subnet(multiscale_features)
         
-        return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output
+        return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output
 
     def get_face_recognition_logits(self, normalized_embedding, embedding_norm, labels):
         return self.margin_head(normalized_embedding, embedding_norm, labels)

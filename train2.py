@@ -6,6 +6,7 @@ import backbones.backbones as backbones
 import datasets as db
 import multitask.face_recognition_heads as face_recognition_heads
 import eval, os, numpy as np
+from torchsummary import summary
 from torch.utils.data import DataLoader, WeightedRandomSampler, ConcatDataset
 from torchvision.transforms import v2
 from torch.optim import lr_scheduler
@@ -33,6 +34,7 @@ To-Do: Implement the weigted random sampler you discussed with gemini
 def main(**kwargs): 
 
     use_validation = True # toggle validation datasets on or off. 
+    return_name = False # Whether to return the name of the dataset or not.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     checkpoint_path = kwargs.get('resume_from_checkpoint')
 
@@ -68,18 +70,20 @@ def main(**kwargs):
     # Data Preparation
     
     # training
+    ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
+    num_classes = ms1mv2.number_of_classes()
+
     train_db_list = [
         # Face recognition
-        db.MS1MV2(transform=train_face_rec_transform, return_name = True),
-
+        ms1mv2,
         # emotion recognition
-        db.AffectNet(transform = train_transform, subset = 'train', return_name = True), 
-        db.RAFDB(transform = train_transform, subset = 'train', return_name = True),
+        db.AffectNet(transform = train_transform, subset = 'train', return_name = return_name), 
+        db.RAFDB(transform = train_transform, subset = 'train', return_name = return_name),
 
         # Age, Gender, and Race
-        db.FairFace(transform = train_transform, subset = 'train', return_name = True), # gender and race
-        db.UTKFace(transform = train_transform, subset = 'train', return_name = True), # age, gender, race
-        db.MORPH(transform = train_transform, subset = 'train', return_name = True) # age, gender
+        db.FairFace(transform = train_transform, subset = 'train', return_name = return_name), # gender and race
+        db.UTKFace(transform = train_transform, subset = 'train', return_name = return_name), # age, gender, race
+        db.MORPH(transform = train_transform, subset = 'train', return_name = return_name) # age, gender
     ]    
     
     batch_size = kwargs.get('batch_size')
@@ -122,75 +126,125 @@ def main(**kwargs):
         print('affectnet lenght: ', len(affectnet_validation_db) * 64)
         print('morph lenght: ', len(morph_test_db) * 64)
 
+    # Training setup
+    model = MultiTaskFaceAnalysisModel(
+        num_classes = num_classes,
+        **kwargs
+    )
+    epochs = kwargs.get('max_epochs')
+    optimizer_name = kwargs.get('optimizer')
+    weight_decay = kwargs.get('weight_decay')
+    lr_scheduler_name = kwargs.get('scheduler')
+    milestones = kwargs.get('scheduler_milestones')
+    start_factor = kwargs.get('start_factor')
+    min_lr = kwargs.get('min_lr')
+    warmup_epochs = kwargs.get('warmup_epochs')
+    learning_rate = kwargs.get('learning_rate')
 
 
-    print(len(train_loader))
-    images, labels = next(iter(train_loader))
+    # Separate parameters into backbone and other parts
+    backbone_params = []
+    other_params = []
+    for name, param in model.named_parameters():
+        if 'backbone' in name:
+            backbone_params.append(param)
+        else:
+            other_params.append(param)
+
+    # Create parameter groups with different learning rates
+    param_groups = [
+        {'params': backbone_params, 'lr': learning_rate / 20},
+        {'params': other_params, 'lr': learning_rate}
+    ]
 
 
-    emotion_translation = {
-    0 : 'anger',
-    1 : 'disgust',
-    2 : 'fear',
-    3 : 'happy',
-    4 : 'sad',
-    5 : 'surprise',
-    6 : 'neutral'
-    }
+    if optimizer_name == 'adamw':
+        optimizer = torch.optim.AdamW(param_groups, lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer_name == 'sgd':
+        optimizer = torch.optim.SGD(param_groups, lr=learning_rate, weight_decay=weight_decay)
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+    
+    if lr_scheduler_name == 'cosine':
+        linear = lr_scheduler.LinearLR(optimizer, start_factor=start_factor, end_factor=1.0, total_iters=warmup_epochs)
+        cosine = lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min = min_lr)
+        scheduler = lr_scheduler.SequentialLR(optimizer, [linear, cosine], milestones=[warmup_epochs])
+    elif lr_scheduler_name == 'multistep':
+        scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=milestones)
+    else:
+        raise ValueError(f"Unsupported scheduler: {lr_scheduler_name}")
 
-    gender_translation = {
-    1 : 'Male',
-    0 : 'Female'
-    }
-
-    race_translation = {
-    0 : 'White',
-    1 : 'Black',
-    2 : 'Asian',
-    3 : 'Indian',
-    4 : 'Other'
-    }
-
-    plt.figure(figsize=(24, 8), dpi = 150)
-    for i in range(16):
-        idx = np.random.randint(0, len(images))
-        image = images[idx]
-        image = image + 1
-        image = image / 2
-        label_text = ''
-
-        face_label = labels['face_recognition'][idx]
-        if face_label != -1:
-            label_text += f'ID: {face_label} '
-
-        emotion_label = labels['emotion'][idx]
-        if emotion_label != -1:
-            label_text += f'emotion: {emotion_translation[int(emotion_label)]} '
-
-        age_label = labels['age'][idx]
-        if age_label != -1:
-            label_text += f'age: {age_label} '
-
-        gender_label = labels['gender'][idx]
-        if gender_label != -1:
-            label_text += f'gender: {gender_translation[int(gender_label)]} '
-
-        race_label = labels['race'][idx]
-        if race_label != -1:
-            label_text += f'race: {race_translation[int(race_label)]} '
-        
-        if 'dataset_name' in labels:
-            label_text += f'dataset: {labels["dataset_name"][idx]}'
+    scaler = torch.amp.GradScaler(device = device)
+    dwa = DynamicWeightAverage(num_tasks = 4)
+    weights = dwa.calculate_weights(avg_losses_current_epoch=None)
 
 
-        plt.subplot(4, 4, i+1)
-        plt.imshow(image.permute(1, 2, 0))
-        plt.title(label_text)
-        plt.axis('off')
 
-    plt.show()
+    model.to(device)
+    # load the previous checkpoint if it exists:
+    if checkpoint_path is not None and os.path.exists(checkpoint_path) and os.path.isfile(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Resuming training from epoch {start_epoch}")
+    else:
+        start_epoch = 0
+
+    # Training loop
+    model.train()
+    for epoch in range(start_epoch, epochs):
+        running_face_rec_loss = 0.0
+        running_emotion_rec_loss = 0.0
+        running_age_estimation_loss = 0.0
+        running_gender_rec_loss = 0.0
+
+        num_face_rec_samples = 0
+        num_emotion_samples = 0
+        num_age_gender_samples = 0
+
+        progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
+
+        for i, batch in progress_bar:
+            
+            images = batch[0]
+            labels = batch[1]
+
+            # Extract data
+            # Face Recognition
+            face_rec_labels = labels['face_recognition']
+            face_rec_mask = (face_rec_labels != -1)
+            face_rec_images = images[face_rec_mask].to(device, non_blocking=True)
+            face_rec_labels = face_rec_labels[face_rec_mask].to(device, non_blocking=True)
+            
+            # Emotion Recognition
+            emotion_labels = labels['emotion_recognition']
+            emotion_recognition_mask = (emotion_labels != -1)
+            emotion_images = images[emotion_recognition_mask].to(device, non_blocking=True)
+            emotion_labels = emotion_labels[emotion_recognition_mask].to(device, non_blocking=True)
+
+            # Age estimation
+            age_gender_labels = labels['age_estimation']
+            age_gender_mask = (age_gender_labels['age'] != -1)
+            age_gender_images = images[age_gender_mask].to(device, non_blocking=True)
+            age_gender_labels = age_gender_labels[age_gender_mask].to(device, non_blocking=True)
+
+            # Gender Recognition
+            gender_recognition_labels = labels['gender_recognition']
+            gender_recognition_mask = (gender_recognition_labels != -1)
+            gender_recognition_images = images[gender_recognition_mask].to(device, non_blocking=True)
+            gender_recognition_labels = gender_recognition_labels[gender_recognition_mask].to(device, non_blocking=True)
+
+            # Race Recognition
+            race_recognition_labels = labels['race_recognition']
+            race_recognition_mask = (race_recognition_labels != -1)
+            race_recognition_images = images[race_recognition_mask].to(device, non_blocking=True)
+            race_recognition_labels = race_recognition_labels[race_recognition_mask].to(device, non_blocking=True)
 
 
+            
+            
 if __name__ == '__main__':
     for key, value in config.items():
         print(f'{key}: {value}')
