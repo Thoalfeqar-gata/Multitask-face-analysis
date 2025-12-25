@@ -8,7 +8,7 @@ import numpy as np
 """
 
 class DynamicWeightAverage:
-    def __init__(self, num_tasks, Temperature=1.0):
+    def __init__(self, num_tasks, Temperature = 1.0):
         self.num_tasks = num_tasks
         self.T = Temperature
         # Store the average loss of each task from the previous epoch

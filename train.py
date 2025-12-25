@@ -3,31 +3,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import backbones.backbones as backbones
-import datasets
+import datasets as db
 import multitask.face_recognition_heads as face_recognition_heads
 import eval, os, numpy as np
-from torch.utils.data import DataLoader
+from torchsummary import summary
+from torch.utils.data import DataLoader, WeightedRandomSampler, ConcatDataset
 from torchvision.transforms import v2
 from torch.optim import lr_scheduler
 from augmenter import Augmenter
 from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
                               EmotionRecognitionSubnet, RaceRecognitionSubnet
-from datasets import MultiTaskDataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.models import MultiTaskFaceAnalysisModel
 from configs.train_multitask import config
 from multitask.loss_weighing import DynamicWeightAverage
-
-
+from matplotlib import pyplot as plt
+from utility_scripts.utility_functions import dldl_loss
 
 torch.set_float32_matmul_precision('medium')
 
 
-
 def main(**kwargs): 
 
-    use_validation = True # toggle validation datasets on or off. 
+    use_validation = False # toggle validation datasets on or off. 
+    return_name = False # Whether to return the name of the dataset or not.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     checkpoint_path = kwargs.get('resume_from_checkpoint')
 
@@ -35,89 +35,105 @@ def main(**kwargs):
     train_face_rec_transform = v2.Compose([ # for face recognition during training.
         v2.ToPILImage(),
         Augmenter(crop_augmentation_prob=0.2, low_res_augmentation_prob=0.2, photometric_augmentation_prob=0.2),
-        v2.Resize((112, 112)),
         v2.RandomHorizontalFlip(),
-        v2.ToTensor(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
     train_transform = v2.Compose([ # for other datasets during training.
         v2.ToPILImage(),
-        v2.Resize((112, 112)),
         v2.RandomHorizontalFlip(),
         v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-        v2.RandomRotation(degrees=10),
+        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         v2.RandomGrayscale(p=0.1),
         v2.RandomApply([v2.GaussianBlur(kernel_size=3, sigma=(0.1, 2))], p=0.1),
-        v2.ToTensor(),
+        v2.RandomErasing(p=0.2, scale=(0.02, 0.1)),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
     test_transform = v2.Compose([ # for testing on datasets other than face recognition.
-        v2.ToPILImage(),
-        v2.Resize((112, 112)),
-        v2.ToTensor(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    # data preparation
-    generator = torch.Generator().manual_seed(42)
-
-    # Face Recognition
-    face_recognition_dataset = datasets.MS1MV2_Dataset()
-    face_recognition_dataset.discard_classes(kwargs.get('min_num_images_per_class'))
-    num_classes = face_recognition_dataset.num_classes # used later with the face recognition subnet
-    face_recognition_dataset = datasets.TransformedDataset(face_recognition_dataset, train_face_rec_transform)
+    # Data Preparation
     
-
-    # Emotion recognition
-    emotion_train_dataset = datasets.EmotionRecognition_Dataset() # A combination of RAF_Dataset, ExpW_Dataset, and AffectNet_Dataset
-    if use_validation:
-        emotion_train_dataset, emotion_val_dataset = torch.utils.data.random_split(emotion_train_dataset, lengths = [0.9, 0.1], generator = generator) # split the train dataset to create a validation dataset
-        emotion_val_dataset = datasets.TransformedDataset(emotion_val_dataset, test_transform)
-    emotion_train_dataset = datasets.TransformedDataset(emotion_train_dataset, train_transform)
-
-    # Age, Gender, and Race
-    agedb_train_dataset = datasets.AgeDB_Dataset(subset = 'train')
-    if use_validation:
-        agedb_train_dataset, agedb_val_dataset = torch.utils.data.random_split(agedb_train_dataset, lengths = [0.8, 0.2], generator = generator)
-        agedb_val_dataset = datasets.TransformedDataset(agedb_val_dataset, test_transform)
-    agedb_train_dataset = datasets.TransformedDataset(agedb_train_dataset, train_transform)
-
+    # training
+    ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
+    num_classes = ms1mv2.number_of_classes()
     
+    affectnet_train = db.AffectNet(transform = train_transform, subset = 'train', return_name = return_name) 
+    rafdb_train = db.RAFDB(transform = train_transform, subset = 'train', return_name = return_name)
+    labels_affectnet, counts_affectnet = np.unique(affectnet_train.labels_df['label'], return_counts = True)
+    labels_rafdb, counts_rafdb = np.unique(rafdb_train.labels_df['label'], return_counts = True)
+    total_counts = counts_affectnet + counts_rafdb
+    total_samples = total_counts.sum()
+    num_emotion_classes = len(total_counts)
+    emotion_weights = torch.FloatTensor(total_samples / (num_emotion_classes * total_counts)).to(device)
+    print(f'Emotion Weights: {emotion_weights}')
 
+    train_db_list = [
+        # Face recognition
+        ms1mv2,
+        # emotion recognition
+        affectnet_train,
+        rafdb_train,
+        # Age, Gender, and Race
+        db.FairFace(transform = train_transform, subset = 'train', return_name = return_name), # gender and race
+        db.UTKFace(transform = train_transform, subset = 'train', return_name = return_name), # age, gender, race
+        db.MORPH(transform = train_transform, subset = 'train', return_name = return_name) # age, gender
+    ]    
+    
     batch_size = kwargs.get('batch_size')
-    batch_sizes = [0.5, 0.25, 0.25] # default ratios for each task/dataset
-    batch_sizes = [int(batch_size * batch_sizes[i]) for i in range(len(batch_sizes))] 
     num_workers = kwargs.get('num_workers')
 
-    
-    train_dataloader = datasets.MultiTaskDataLoader(
-        datasets = [face_recognition_dataset, emotion_train_dataset, agedb_train_dataset],
-        batch_sizes = batch_sizes,
-        num_workers = num_workers
+    train_loader = db.get_balanced_loader(
+        train_db_list,
+        batch_size = batch_size, 
+        num_workers = num_workers,
+        epoch_size = 5000,
     )
 
+
     if use_validation:
-        emotion_val_dataloader = torch.utils.data.DataLoader(
-            dataset = emotion_val_dataset,
-            batch_size = 32,
-            shuffle = False,
-            num_workers = num_workers,
+        # validation
+        fairface_test_db = torch.utils.data.DataLoader( # for race recognition and gender recognition
+            dataset = db.FairFace(transform = test_transform, subset = 'test'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
             pin_memory = True,
         )
 
-        agedb_val_dataloader = torch.utils.data.DataLoader(
-            dataset = agedb_val_dataset,
-            batch_size = 32,
-            shuffle = False,
-            num_workers=num_workers,
-            pin_memory=True
+        affectnet_validation_db = torch.utils.data.DataLoader( # for emotion recognition
+            dataset = db.AffectNet(transform = test_transform, subset = 'test'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
         )
 
+        morph_test_db = torch.utils.data.DataLoader( # for age estimation and gender recognition 
+            dataset = db.MORPH(transform = test_transform, subset = 'validation'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
+        )
 
-    # Training setup 
-    model = MultiTaskFaceAnalysisModel(num_classes, **kwargs)
+        print('fairface lenght: ', len(fairface_test_db) * 64)
+        print('affectnet lenght: ', len(affectnet_validation_db) * 64)
+        print('morph lenght: ', len(morph_test_db) * 64)
+
+    # Training setup
+    model = MultiTaskFaceAnalysisModel(
+        num_classes = num_classes,
+        **kwargs
+    )
     epochs = kwargs.get('max_epochs')
     optimizer_name = kwargs.get('optimizer')
     weight_decay = kwargs.get('weight_decay')
@@ -126,23 +142,56 @@ def main(**kwargs):
     start_factor = kwargs.get('start_factor')
     min_lr = kwargs.get('min_lr')
     warmup_epochs = kwargs.get('warmup_epochs')
+    freeze_backbone_epochs = kwargs.get('freeze_backbone_epochs')
     learning_rate = kwargs.get('learning_rate')
 
 
-    # Separate parameters into backbone and other parts
+    # Separate parameters into backbone and other parts and count the parameters
     backbone_params = []
     other_params = []
+    backbone_params_count = 0
+    face_rec_subnet_parameters = 0
+    emotion_rec_subnet_parameters = 0
+    age_estimation_subnet_parameters = 0
+    gender_rec_subnet_parameters = 0
+    race_rec_subnet_parameters = 0
     for name, param in model.named_parameters():
         if 'backbone' in name:
             backbone_params.append(param)
+            backbone_params_count += param.numel()
+        elif 'face_recognition_embedding_subnet' in name:
+            other_params.append(param)
+            face_rec_subnet_parameters += param.numel()
+        elif 'emotion_recognition_subnet' in name:
+            other_params.append(param)
+            emotion_rec_subnet_parameters += param.numel()
+        elif 'age_estimation_subnet' in name:
+            other_params.append(param)
+            age_estimation_subnet_parameters += param.numel()
+        elif 'gender_recognition_subnet' in name:
+            other_params.append(param)
+            gender_rec_subnet_parameters += param.numel()
+        elif 'race_recognition_subnet' in name:
+            other_params.append(param)
+            race_rec_subnet_parameters += param.numel()
         else:
             other_params.append(param)
+    
+
+
+    print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
+    print(f'Face recognition subnet parameters: {face_rec_subnet_parameters} <'.ljust(50, '='))
+    print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters} <'.ljust(50, '='))
+    print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters} <'.ljust(50, '='))
+    print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters} <'.ljust(50, '='))
+    print(f'Race recognition subnet parameters: {race_rec_subnet_parameters} <'.ljust(50, '='))
 
     # Create parameter groups with different learning rates
     param_groups = [
-        {'params': backbone_params, 'lr': learning_rate / 10},
+        {'params': backbone_params, 'lr': learning_rate / 20},
         {'params': other_params, 'lr': learning_rate}
     ]
+
 
     if optimizer_name == 'adamw':
         optimizer = torch.optim.AdamW(param_groups, lr=learning_rate, weight_decay=weight_decay)
@@ -150,8 +199,7 @@ def main(**kwargs):
         optimizer = torch.optim.SGD(param_groups, lr=learning_rate, weight_decay=weight_decay)
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-
-
+    
     if lr_scheduler_name == 'cosine':
         linear = lr_scheduler.LinearLR(optimizer, start_factor=start_factor, end_factor=1.0, total_iters=warmup_epochs)
         cosine = lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min = min_lr)
@@ -162,132 +210,174 @@ def main(**kwargs):
         raise ValueError(f"Unsupported scheduler: {lr_scheduler_name}")
 
     scaler = torch.amp.GradScaler(device = device)
-    dwa = DynamicWeightAverage(num_tasks = 4)
-    weights = dwa.calculate_weights(avg_losses_current_epoch=None)
+    dwa = DynamicWeightAverage(num_tasks = 5)
+    losses_weights = dwa.calculate_weights(avg_losses_current_epoch=None)
+    losses_weights_history = [losses_weights]
 
 
     model.to(device)
     # load the previous checkpoint if it exists:
     if checkpoint_path is not None and os.path.exists(checkpoint_path) and os.path.isfile(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only = False)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
+        losses_weights_history = checkpoint['losses_weights_history']
+        dwa = checkpoint['dwa']
+        losses_weights = checkpoint['losses_weights']
+
         print(f"Resuming training from epoch {start_epoch}")
     else:
         start_epoch = 0
 
-    # training loop
+    # Training loop
     for epoch in range(start_epoch, epochs):
-        model.train()
+        model.train() # Put here to ensure the epoch starts with the model in training mode
+
+        if epoch < freeze_backbone_epochs:
+            print(f"🔒 Epoch {epoch}: Backbone is FROZEN (Warmup Phase)")            
+
+            for param in backbone_params:
+                param.requires_grad = False
+
+            for param in other_params: # just to make sure the head parameters are trainable
+                param.requires_grad = True
+
+        elif epoch == freeze_backbone_epochs:
+            print(f"🔓 Epoch {epoch}: Unfreezing Backbone! (Finetuning Phase)")
+            for param in backbone_params:
+                param.requires_grad = True
+
         
+
         running_face_rec_loss = 0.0
         running_emotion_rec_loss = 0.0
         running_age_estimation_loss = 0.0
         running_gender_rec_loss = 0.0
+        running_race_rec_loss = 0.0
+
 
         num_face_rec_samples = 0
         num_emotion_samples = 0
-        num_age_gender_samples = 0
+        num_age_samples = 0
+        num_gender_samples = 0
+        num_race_samples = 0
 
-        progress_bar = tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc=f"Epoch {epoch+1}/{epochs}")
 
-        for i, batch in progress_bar:
-            db1, db2, db3 = batch
-            face_rec_images, face_rec_labels = db1
-            emotion_images, emotion_labels = db2
-            age_images, (_, age_labels, gender_labels) = db3
+        progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
 
-            num_face_rec_samples += face_rec_images.size(0)
-            num_emotion_samples += emotion_images.size(0)
-            num_age_gender_samples += age_images.size(0)
+        for counter, batch in progress_bar:
+            
+            images = batch[0]
+            labels = batch[1]
+            images = images.to(device, non_blocking=True) # The labels are in a dict format, which cannot be moved to cuda. Task labels will be extracted below and converted to cuda one by one.
 
-            split_indices = np.cumsum([0, face_rec_images.size(0), emotion_images.size(0), age_images.size(0)])
-
-            # combine images
-            x = torch.cat((face_rec_images, emotion_images, age_images), dim=0)
-
-            # to cuda
-            x = x.to(device, non_blocking=True)
-            face_rec_labels = face_rec_labels.to(device, non_blocking=True)
-            emotion_labels = emotion_labels.to(device, non_blocking=True)
-            age_labels = age_labels.to(device, non_blocking=True).view(-1, 1)
-            gender_labels = gender_labels.to(device, non_blocking=True).view(-1, 1).float()
-
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none = True)
 
             # forward pass
             with torch.amp.autocast(device_type = device):
-                (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output = model(x)
+                (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output = model(images)
 
-                # extract outputs for each class
-                ## face recognition
-                normalized_embedding, embedding_norm = normalized_embedding[split_indices[0] : split_indices[1]], embedding_norm[split_indices[0]:split_indices[1]] 
+                # Face recognition loss
+                face_recognition_labels = labels['face_recognition'].to(device, non_blocking=True)
+                face_recognition_mask = face_recognition_labels != -1
+
+                if face_recognition_mask.sum() > 0: # check if we have face recognition samples in this batch
+                    valid_embeddings = normalized_embedding[face_recognition_mask]
+                    valid_embedding_norms = embedding_norm[face_recognition_mask]
+                    valid_labels = face_recognition_labels[face_recognition_mask]
+
+                    face_rec_logits = model.get_face_recognition_logits(valid_embeddings, valid_embedding_norms, valid_labels)
+                    face_rec_loss = F.cross_entropy(face_rec_logits, valid_labels)
+                    num_face_rec_samples += face_recognition_mask.sum().item()
+
                 
-                ## emotion recognition
-                emotion_output = emotion_output[split_indices[1] : split_indices[2]]
+                
+                # Emotion recognition
+                emotion_labels = labels['emotion'].to(device, non_blocking=True)
+                emotion_mask = emotion_labels != -1
+                if emotion_mask.sum() > 0: # check if we have emotion recognition samples in this batch
+                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask], weight = emotion_weights)
+                    num_emotion_samples += emotion_mask.sum().item()
+                
 
-                ## age and gender come from the same images since agedb has multiple labels. So the same split_indices will be used.
-                ## age estimation
-                age_output = age_output[split_indices[2] : split_indices[3]]
-
-                ## gender recognition
-                gender_output = gender_output[split_indices[2] : split_indices[3]]
 
 
-                # Loss calculation
-                ## face recognition
-                face_rec_logits = model.margin_head(normalized_embedding, embedding_norm, face_rec_labels)
-                face_rec_loss = F.cross_entropy(face_rec_logits, face_rec_labels)
+                # Age estimation
+                age_labels = labels['age'].to(device, non_blocking=True)
+                age_mask = age_labels != -1
+                if age_mask.sum() > 0: # check if we have age estimation samples in this batch
+                    age_loss = dldl_loss(age_output[age_mask], age_labels[age_mask])
+                    # age_loss = F.l1_loss(age_output[age_mask], age_labels[age_mask].view(-1, 1))
+                    num_age_samples += age_mask.sum().item()
 
-                ## emotion recognition
-                emotion_rec_loss = F.cross_entropy(emotion_output, emotion_labels)
 
-                ## age estimation
-                age_estimation_loss = F.l1_loss(age_output, age_labels)
 
-                ## gender recognition
-                gender_rec_loss = F.binary_cross_entropy_with_logits(gender_output,gender_labels)
+                # Gender recognition
+                gender_labels = labels['gender'].to(device, non_blocking=True)
+                gender_mask = gender_labels != -1
+                if gender_mask.sum() > 0: # check if we have gender recognition samples in this batch
+                    gender_loss = F.binary_cross_entropy_with_logits(gender_output[gender_mask], gender_labels[gender_mask].view(-1, 1).float())
+                    num_gender_samples += gender_mask.sum().item()
+                
 
-                ## total_loss
-                losses = [face_rec_loss, emotion_rec_loss, age_estimation_loss, gender_rec_loss]
+                
+                # Race recognition
+                race_labels = labels['race'].to(device, non_blocking=True)
+                race_mask = race_labels != -1
+                if race_mask.sum() > 0: # check if we have race recognition samples in this batch
+                    race_loss = F.cross_entropy(race_output[race_mask], race_labels[race_mask])
+                    num_race_samples += race_mask.sum().item()
+                
+                
+
+                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss]
                 total_loss = 0
-                for i in range(len(weights)):
-                    total_loss += weights[i] * losses[i]
-
-
+                for i in range(len(losses_weights)):
+                    total_loss += losses_weights[i] * losses[i]
+            
             
             # backward pass
-            scaler.scale(total_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if total_loss != 0:
+                scaler.scale(total_loss).backward()
+                
+                # gradient clipping
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
 
+                # update weights
+                scaler.step(optimizer)
+                scaler.update()
+            
+            running_face_rec_loss += face_rec_loss.item() * face_recognition_mask.sum().item()
+            running_emotion_rec_loss += emotion_loss.item() * emotion_mask.sum().item()
+            running_age_estimation_loss += age_loss.item() * age_mask.sum().item()
+            running_gender_rec_loss += gender_loss.item() * gender_mask.sum().item()
+            running_race_rec_loss += race_loss.item() * race_mask.sum().item()
 
-            running_face_rec_loss += face_rec_loss.item() * face_rec_images.size(0)
-            running_emotion_rec_loss += emotion_rec_loss.item() * emotion_images.size(0)
-            running_age_estimation_loss += age_estimation_loss.item() * age_images.size(0)
-            running_gender_rec_loss += gender_rec_loss.item() * age_images.size(0)
-
-            progress_bar.set_postfix(
-                loss=f"{total_loss.item():.4f}",
-                fr_loss=f"{face_rec_loss.item():.4f}",
-                em_loss=f"{emotion_rec_loss.item():.4f}",
-                age_loss=f"{age_estimation_loss.item():.4f}",
-                gen_loss=f"{gender_rec_loss.item():.4f}",
-                lr=f"{optimizer.param_groups[1]['lr']:.6f}",
-                lr_backbone = f'{optimizer.param_groups[0]['lr']:.6f}',
-                weights = f'{weights}'
-            )
+            progress_bar.set_postfix(ordered_dict={
+                'loss' : f"{total_loss.item():.4f}",
+                'fr_loss' : f"{face_rec_loss.item():.4f}",
+                'em_loss' : f"{emotion_loss.item():.4f}",
+                'age_loss' : f"{age_loss.item():.4f}",
+                'gen_loss' : f"{gender_loss.item():.4f}",
+                'race_loss' : f"{race_loss.item():.4f}",
+                'lr' : f"{optimizer.param_groups[1]['lr']:.6f}",
+                'lr_backbone' : f'{optimizer.param_groups[0]['lr']:.6f}',
+                'losses_weights' : f'{losses_weights}'
+            })
 
         scheduler.step()
 
         epoch_fr_loss = running_face_rec_loss / num_face_rec_samples
         epoch_em_loss = running_emotion_rec_loss / num_emotion_samples
-        epoch_age_loss = running_age_estimation_loss / num_age_gender_samples
-        epoch_gen_loss = running_gender_rec_loss / num_age_gender_samples
-        weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss]))
-        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss
+        epoch_age_loss = running_age_estimation_loss / num_age_samples
+        epoch_gen_loss = running_gender_rec_loss / num_gender_samples
+        epoch_race_loss = running_race_rec_loss / num_race_samples
+        losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss]))
+        losses_weights_history.append(losses_weights)
+        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss
 
         print(f"\nEpoch {epoch+1} Summary:")
         print(f"  Total Loss: {epoch_loss:.4f}")
@@ -295,14 +385,18 @@ def main(**kwargs):
         print(f"  Emotion Loss: {epoch_em_loss:.4f}")
         print(f"  Age Loss: {epoch_age_loss:.4f}")
         print(f"  Gender Loss: {epoch_gen_loss:.4f}")
-        print(f"  Weights: {weights}")
+        print(f"  Race Loss: {epoch_race_loss:.4f}")
+        print(f"  Losses Weights: {losses_weights}")
 
-        checkpoint = {
+        checkpoint = { 
             'epoch' : epoch,
             'model_state_dict' : model.state_dict(),
             'optimizer_state_dict' : optimizer.state_dict(),
             'scheduler_state_dict' : scheduler.state_dict(),
             'loss' : epoch_loss,
+            'losses_weights_history' : losses_weights_history,
+            'dwa' : dwa,
+            'losses_weights' : losses_weights
         }
 
         # Create the checkpoint file if it doesn't exist.
@@ -315,83 +409,74 @@ def main(**kwargs):
             checkpoint_path
         )
 
-        
+        # Validation
         if use_validation:
-            print('Validating...')
-            model.eval()
-            with torch.no_grad():
-                # face recognition
-                face_rec_model = nn.Sequential(
-                    model.backbone,
-                    model.face_recognition_embedding_subnet
-                )
-                metrics = eval.evaluate_backbone(face_rec_model, datasets_to_test=['CPLFW', 'CALFW'])    
-                del face_rec_model #cleanup
-                
-                for key, db_metrics in metrics.items():
-                    accuracy, _, _, f1_score, _, _, _, _ = db_metrics
-                    print(f'Accuracy for {key} = {accuracy}.')
-                    print(f'F1 score for {key} = {f1_score}')
+            print(' Validating '.center(100, '='))
+            
+            # Face Recognition
+            face_rec_model = nn.Sequential(
+                model.backbone,
+                model.face_recognition_embedding_subnet
+            )
+            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['CPLFW', 'CALFW'])
 
-                # Emotion recognition
-                predictions = []
-                labels = []
-                for image, label in emotion_val_dataloader:
-                    image = image.to('cuda', non_blocking = True)
-                    label = label.to('cuda', non_blocking = True)
+            for key, db_metrics in metrics.items():
+                accuracy, _, _, f1_score, _, _, _, _ = db_metrics
+                print(f'Accuracy for {key} = {accuracy}.')
+                print(f'F1 score for {key} = {f1_score}')
 
-                    emotion_logits = model.emotion_recognition_subnet(model.backbone(image))
-                    emotion_prediction = torch.argmax(emotion_logits, dim = 1)
-                    predictions.append(emotion_prediction)
-                    labels.append(label)
+            # Emotion Recognition
+            emotion_accuracy, emotion_loss = eval.evaluate_emotion(model = model, dataloader = affectnet_validation_db)
+            print(f'Accuracy for AffectNet (emotion recognition) = {emotion_accuracy}.')
 
-                predictions = torch.cat(predictions, dim = 0)
-                labels = torch.cat(labels, dim = 0)
-                emotion_accuracy = (predictions == labels).float().mean().item()
+            # Age estimation
+            age_mae = eval.evaluate_age(model = model, dataloader = morph_test_db)
+            print(f'MAE for MORPH (age estimation) = {age_mae}.')
 
-                # cleanup
-                del predictions, labels
+            # Gender recognition
+            gender_accuracy, gender_loss = eval.evaluate_gender(model = model, dataloader = morph_test_db)
+            print(f'Accuracy for MORPH (gender recognition) = {gender_accuracy}.')
 
+            gender_accuracy, gender_loss = eval.evaluate_gender(model = model, dataloader = fairface_test_db)
+            print(f'Accuracy for FairFace (gender recognition) = {gender_accuracy}.')
 
-                print(f'Accuracy for RAF = {emotion_accuracy}')
-                print()
-
-                # Age and Gender Estimation
-                age_predictions, gender_predictions = [], []
-                gender_labels, age_labels = [], []
-                for image, (_, age_label, gender_label) in agedb_val_dataloader:
-                    image = image.to('cuda', non_blocking = True)
-                    age_label = age_label.to('cuda', non_blocking = True).view(-1, 1)
-                    gender_label = gender_label.to('cuda', non_blocking = True).view(-1, 1).float()
-
-                    age_prediction = model.age_estimation_subnet(model.backbone(image))
-                    gender_prediction = model.gender_recognition_subnet(model.backbone(image))
-                    age_predictions.append(age_prediction)
-                    gender_predictions.append(gender_prediction)
-                    age_labels.append(age_label)
-                    gender_labels.append(gender_label)
-                
-                age_predictions = torch.cat(age_predictions, dim = 0)
-                gender_predictions = torch.cat(gender_predictions, dim = 0)
-                age_labels = torch.cat(age_labels, dim = 0)
-                gender_labels = torch.cat(gender_labels, dim = 0)
-
-                age_l1_score = F.l1_loss(age_predictions, age_labels).item()
-                gender_accuracy = (torch.sigmoid(gender_predictions).round() == gender_labels).float().mean().item()
-
-                # cleanup
-                del age_predictions, gender_predictions, age_labels, gender_labels
-
-                print(f'Age L1 score = {age_l1_score}')
-                print(f'Gender accuracy = {gender_accuracy}')
-                print()
+            # Race recognition
+            race_accuracy, race_loss = eval.evalate_race(model = model, dataloader = fairface_test_db, device = device)
+            print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
     
+    # Save the final model
     torch.save(
-        model.state_dict(),
-        os.path.join('data', 'models', 'multitask experiment number 1', 'model.pth')
+        model.state_dict(), 
+        os.path.join('data', 'models', 'multitask_davit_t_face_emotion_age_gender_race', 'model.pth')
     )
 
+    # Plot dynamic weight average history
+    task_names = ['Face Recognition', 'Emotion Recognition', 'Age Estimation', 'Gender Recognition', 'Race Recognition']
+    plt.figure(figsize=(10, 5), dpi=600)
+    plt.title('The history of the loss weights using Dynamic Weight Average.')
+    
+    weight_history = np.array(losses_weights_history)
+    
+    # Create an X-axis array (e.g., Epoch 1, 2, 3...)
+    epochs_x = range(1, weight_history.shape[0] + 1)
 
+    for i in range(weight_history.shape[1]):
+        # Plot X (Epochs) vs Y (Weights for task i)
+        plt.plot(epochs_x, weight_history[:, i], label=task_names[i])
+        
+    plt.legend(loc='best')
+    plt.xlabel('Epoch')
+    plt.ylabel('Class weight')
+    
+    # Ensure directory exists before saving
+    os.makedirs(os.path.join('data', 'figures', 'MultiTask Training'), exist_ok=True)
+    
+    plt.savefig(
+        os.path.join('data', 'figures', 'MultiTask Training', 'Task_loss_weights_history.png')
+    )
+    plt.close() # Good practice to close the figure to free memory
+
+            
 if __name__ == '__main__':
     for key, value in config.items():
         print(f'{key}: {value}')
