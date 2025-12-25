@@ -95,7 +95,7 @@ def main(**kwargs):
         train_db_list,
         batch_size = batch_size, 
         num_workers = num_workers,
-        epoch_size = 5000,
+        epoch_size = 2_000_000,
     )
 
 
@@ -125,9 +125,9 @@ def main(**kwargs):
             pin_memory = True,
         )
 
-        print('fairface lenght: ', len(fairface_test_db) * 64)
-        print('affectnet lenght: ', len(affectnet_validation_db) * 64)
-        print('morph lenght: ', len(morph_test_db) * 64)
+        print('fairface length: ', len(fairface_test_db) * 64)
+        print('affectnet length: ', len(affectnet_validation_db) * 64)
+        print('morph length: ', len(morph_test_db) * 64)
 
     # Training setup
     model = MultiTaskFaceAnalysisModel(
