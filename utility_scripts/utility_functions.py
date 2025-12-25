@@ -11,54 +11,42 @@ import torch.nn.functional as F
 
 ##################################
 
-def label_to_gaussian(label, min_age=0, max_age=100, sigma=2.0):
-    """
-    Generates a Gaussian distribution for a batch of labels.
-    
-    Args:
-        label (torch.Tensor): Tensor of shape [Batch_Size] containing true ages.
-    """
-    # 1. Create ages vector [min, max] and reshape to [1, Classes] for broadcasting
-    # We create it on the same device as the label
+def label_to_gaussian(label, min_age, max_age, sigma):
+
     ages = torch.arange(min_age, max_age + 1, device=label.device).float().view(1, -1)
-    
-    # 2. Reshape labels to [Batch, 1] so we can subtract: (1, C) - (B, 1) = (B, C)
     label = label.view(-1, 1).float()
     
-    # 3. Calculate Gaussian
-    distribution = torch.exp(-torch.pow(ages - label, 2) / (2 * sigma ** 2))
+    # Calculate Gaussian
+    squared_diff = torch.pow(ages - label, 2)
+    distribution = torch.exp(-squared_diff / (2 * sigma ** 2))
     
-    # 4. Normalize so each distribution sums to 1 across the age dimension (dim=1)
-    distribution = distribution / torch.sum(distribution, dim=1, keepdim=True)
+    # Normalize with epsilon for safety
+    distribution = distribution / (torch.sum(distribution, dim=1, keepdim=True) + 1e-10)
     
     return distribution
 
-
-def dldl_loss(logits, target, min_age=0, max_age=100, sigma=2.0, l1_weight=1.0):
-    """
-    Computes DLDL-v2 loss (KL Divergence + L1 Expectation Loss).
-    """
-    # 1. Calculate Probabilities
-    log_probs = F.log_softmax(logits, dim=1) # [Batch, Classes], log_probs are needed for F.kl_div to work.
-    probs = torch.exp(log_probs)             # [Batch, Classes]
+def dldl_loss(logits, target, min_age=0, max_age=101, sigma=2.0, l1_weight=1.0):
+    # 1. Calc Probabilities
+    log_probs = F.log_softmax(logits, dim=1) 
+    probs = torch.exp(log_probs)
     
-    # 2. Generate Target Distributions
+    # 2. Target Dist
     target_distribution = label_to_gaussian(target, min_age, max_age, sigma)
     
-    # 3. KL Divergence Loss
-    # reduction='batchmean' divides by batch size, which is mathematically correct for KL
+    # 3. KL Loss
     loss_kl = F.kl_div(log_probs, target_distribution, reduction='batchmean')
     
-    # 4. Expectation L1 Loss (Correction: use dim=1)
+    # 4. Expectation L1
+    # Create ages vector consistent with logits dimension
     ages = torch.arange(min_age, max_age + 1, device=logits.device).float()
     
-    # Calculate expected age for EACH sample: sum(p_i * age_i)
-    # Result shape: [Batch]
+    # Verify shape consistency (Optional debugging)
+    if logits.size(1) != len(ages):
+        raise ValueError(f"Logits classes {logits.size(1)} != Age range {len(ages)}")
+
     expectation = torch.sum(probs * ages, dim=1)
-    
     loss_l1 = F.l1_loss(expectation, target.float())
     
-    # Combine losses (Papers often weight them, but 1:1 is a standard start)
     return loss_kl + (l1_weight * loss_l1)
 
 
