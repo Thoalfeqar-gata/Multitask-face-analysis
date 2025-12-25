@@ -18,7 +18,8 @@ config = {
     'scheduler' : 'cosine',
     'max_epochs' : 24,
     'warmup_epochs' : 4,
-    'batch_size' : 256,
+    'freeze_backbone_epochs' : 2,
+    'batch_size' : 320,
     'min_num_images_per_class' : 20,
     'num_workers' : 8,
 }
