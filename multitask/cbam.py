@@ -13,7 +13,7 @@ class SAM(nn.Module):
         avg = torch.mean(x,1).unsqueeze(1)
         concat = torch.cat((max,avg), dim=1)
         output = self.conv(concat)
-        output = F.sigmoid(output) * x 
+        output = torch.sigmoid(output) * x 
         return output 
 
 class CAM(nn.Module):
@@ -33,7 +33,7 @@ class CAM(nn.Module):
         linear_max = self.linear(max.view(b,c)).view(b, c, 1, 1)
         linear_avg = self.linear(avg.view(b,c)).view(b, c, 1, 1)
         output = linear_max + linear_avg
-        output = F.sigmoid(output) * x
+        output = torch.sigmoid(output) * x
         return output
     
 class CBAM(nn.Module):
