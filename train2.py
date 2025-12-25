@@ -19,16 +19,9 @@ from multitask.models import MultiTaskFaceAnalysisModel
 from configs.train_multitask import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
+from utility_scripts.utility_functions import dldl_loss
 
 torch.set_float32_matmul_precision('medium')
-
-"""
-
-To-Do: Implement the weigted random sampler you discussed with gemini
-
-
-"""
-
 
 
 def main(**kwargs): 
@@ -42,28 +35,28 @@ def main(**kwargs):
     train_face_rec_transform = v2.Compose([ # for face recognition during training.
         v2.ToPILImage(),
         Augmenter(crop_augmentation_prob=0.2, low_res_augmentation_prob=0.2, photometric_augmentation_prob=0.2),
-        v2.Resize((112, 112)),
         v2.RandomHorizontalFlip(),
-        v2.ToTensor(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
     train_transform = v2.Compose([ # for other datasets during training.
         v2.ToPILImage(),
-        v2.Resize((112, 112)),
         v2.RandomHorizontalFlip(),
         v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-        v2.RandomRotation(degrees=10),
+        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         v2.RandomGrayscale(p=0.1),
         v2.RandomApply([v2.GaussianBlur(kernel_size=3, sigma=(0.1, 2))], p=0.1),
-        v2.ToTensor(),
+        v2.RandomErasing(p=0.2, scale=(0.02, 0.1)),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
     test_transform = v2.Compose([ # for testing on datasets other than face recognition.
-        v2.ToPILImage(),
-        v2.Resize((112, 112)),
-        v2.ToTensor(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
@@ -93,6 +86,7 @@ def main(**kwargs):
         train_db_list,
         batch_size = batch_size, 
         num_workers = num_workers,
+        epoch_size = 50000,
     )
 
 
@@ -194,8 +188,8 @@ def main(**kwargs):
         start_epoch = 0
 
     # Training loop
-    model.train()
     for epoch in range(start_epoch, epochs):
+        model.train() # Put here to ensure the epoch starts with the model in training mode
 
         if epoch < freeze_backbone_epochs:
             print(f"🔒 Epoch {epoch}: Backbone is FROZEN (Warmup Phase)")            
@@ -207,8 +201,8 @@ def main(**kwargs):
                 param.requires_grad = True
 
         elif epoch == freeze_backbone_epochs:
+            print(f"🔓 Epoch {epoch}: Unfreezing Backbone! (Finetuning Phase)")
             for param in backbone_params:
-                print(f"🔓 Epoch {epoch}: Unfreezing Backbone! (Finetuning Phase)")
                 param.requires_grad = True
 
         
@@ -270,7 +264,8 @@ def main(**kwargs):
                 age_labels = labels['age'].to(device, non_blocking=True)
                 age_mask = age_labels != -1
                 if age_mask.sum() > 0: # check if we have age estimation samples in this batch
-                    age_loss = F.l1_loss(age_output[age_mask], age_labels[age_mask].view(-1, 1))
+                    age_loss = dldl_loss(age_output[age_mask], age_labels[age_mask])
+                    # age_loss = F.l1_loss(age_output[age_mask], age_labels[age_mask].view(-1, 1))
                     num_age_samples += age_mask.sum().item()
 
 
@@ -366,6 +361,37 @@ def main(**kwargs):
             checkpoint_path
         )
 
+        # Validation
+        if use_validation:
+            print(' Validating '.center(100, '='))
+            
+            # Face Recognition
+            face_rec_model = nn.Sequential(
+                model.backbone,
+                model.face_recognition_embedding_subnet
+            )
+            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['CPLFW', 'CALFW'])
+
+            for key, db_metrics in metrics.items():
+                accuracy, _, _, f1_score, _, _, _, _ = db_metrics
+                print(f'Accuracy for {key} = {accuracy}.')
+                print(f'F1 score for {key} = {f1_score}')
+
+            # Emotion Recognition
+            emotion_accuracy, emotion_loss = eval.evaluate_emotion(model = model, dataloader = affectnet_validation_db)
+            print(f'Accuracy for AffectNet (emotion recognition) = {emotion_accuracy}.')
+
+            # Age estimation
+            age_mae = eval.evaluate_age(model = model, dataloader = fairface_test_db)
+            print(f'MAE for FairFace (age estimation) = {age_mae}.')
+
+            # Gender recognition
+            gender_accuracy, gender_loss = eval.evaluate_gender(model = model, dataloader = morph_test_db)
+            print(f'Accuracy for MORPH (gender recognition) = {gender_accuracy}.')
+
+            # Race recognition
+            race_accuracy, race_loss = eval.evalate_race(model = model, dataloader = fairface_test_db, device = device)
+            print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
 
             
 if __name__ == '__main__':
