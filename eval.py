@@ -5,6 +5,148 @@ import torch.nn.functional as F
 import datasets
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
+from tqdm import tqdm
+
+##################################
+
+#   MultiTask testing and validation utilities
+
+#################################
+
+def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
+    """
+    Evaluates Emotion Recognition (Multi-class Classification).
+    Returns: Average Loss, Accuracy
+    """
+    model.eval()
+    correct = 0
+    total = 0
+    total_loss = 0.0
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Emotion", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            targets = labels['emotion'].to(device)
+            
+            # Forward pass
+            _, emotion_out, _, _, _ = model(images)
+            
+            # Loss
+            loss = F.cross_entropy(emotion_out, targets)
+            total_loss += loss.item() * len(targets)
+            
+            # Accuracy
+            preds = torch.argmax(emotion_out, dim=1)
+            correct += (preds == targets).sum().item()
+            total += len(targets)
+
+    return correct / total, total_loss / total # accuracy, loss
+
+
+def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device='cuda', min_age=0, max_age=101):
+    """
+    Evaluates Age Estimation (DLDL approach).
+    Returns: Mean Absolute Error (MAE) in years.
+    """
+    model.eval()
+    total_mae = 0.0
+    total = 0
+    
+    # Pre-create the age vector (0, 1, ..., 101) once to save time
+    age_values = torch.arange(min_age, max_age + 1, dtype=torch.float32, device=device).view(1, -1)
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Age", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            # Targets are ground truth ages (e.g., 25, 40)
+            targets = labels['age'].to(device).float()
+            
+            # Forward pass -> Get Logits [Batch, 102]
+            _, _, age_logits, _, _ = model(images)
+            
+            # 1. Convert Logits to Probabilities
+            probs = F.softmax(age_logits, dim=1) # [Batch, 102]
+            
+            # 2. Calculate Expected Age (Weighted Sum)
+            # sum(Prob * Age_Value) -> Single scalar per image
+            predicted_ages = torch.sum(probs * age_values, dim=1) # Shape: [Batch]
+            
+            # 3. Calculate MAE
+            # predicted_ages is [Batch], targets is [Batch]
+            mae = F.l1_loss(predicted_ages, targets)
+            
+            total_mae += mae.item() * len(targets)
+            total += len(targets)
+            
+    return total_mae / total
+
+
+def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
+    """
+    Evaluates Gender Recognition (Binary Classification).
+    Returns: Average Loss, Accuracy
+    """
+    model.eval()
+    correct = 0
+    total = 0
+    total_loss = 0.0
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Gender", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            targets = labels['gender'].to(device)
+            
+            # Forward pass - Extract only gender output
+            _, _, _, gender_out, _ = model(images)
+            
+            # Loss (BCEWithLogits usually expects floats)
+            loss = F.binary_cross_entropy_with_logits(gender_out, targets.view(-1, 1).float())
+            total_loss += loss.item() * len(targets)
+            
+            # Accuracy (Sigmoid > 0.5)
+            probs = torch.sigmoid(gender_out)
+            preds = (probs > 0.5).long()
+            correct += (preds.view(-1) == targets.view(-1)).sum().item()
+            total += len(targets)
+
+    return correct / total, total_loss / total # accuracy, loss
+
+
+def evalate_race(model, dataloader, device):
+    """
+    Evaluates Race Recognition (Multi-class Classification).
+    Returns: Average Loss, Accuracy
+    """
+    model.eval()
+    correct = 0
+    total = 0
+    total_loss = 0.0
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Race", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            targets = labels['race'].to(device)
+            
+            # Forward pass - Extract only race output
+            _, _, _, _, race_out = model(images)
+            
+            # Loss
+            loss = F.cross_entropy(race_out, targets)
+            total_loss += loss.item() * len(targets)
+            
+            # Accuracy
+            preds = torch.argmax(race_out, dim=1)
+            correct += (preds == targets).sum().item()
+            total += len(targets)
+
+    return correct / total, total_loss / total # accuracy, loss
+
+
+
 
 ##################################
 
@@ -13,7 +155,7 @@ from sklearn.model_selection import KFold
 ##################################
 
 
-def evaluate_backbone(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'], batch_size = 128):
+def evaluate_face_recognition(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'], batch_size = 128):
     """
     Evaluates a face recognition backbone on standard benchmarks using 10-fold cross-validation.
 
@@ -54,7 +196,7 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
         datasets_to_test (list, optional): List of dataset names.
             Defaults to ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'].
         use_tta (bool, optional): If True, averages embeddings from original and horizontally flipped images.
-            Defaults to True.
+                                  Defaults to True.
         batch_size (int, optional): Batch size for processing images. Defaults to 512.
         preprocess (bool): Whether to apply preprocessing on the images. Defaults to True.
         use_gpu (bool): Whether to use GPU for processing. Defaults to True.
@@ -70,8 +212,8 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
     backbone.eval()
 
     image_transform = v2.Compose([
-        v2.ToPILImage(),
-        v2.ToTensor(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5]) # To [-1, 1]
     ])
 
@@ -265,7 +407,7 @@ def find_best_threshold_by_accuracy(distances, labels, num_thresholds=1000):
     if len(distances) == 0 or len(labels) == 0:
         return 0.0, 0.0 # Handle empty input case
 
-    thresholds = np.linspace(0.0, 4.0, num_thresholds)
+    thresholds = np.linspace(0.0, 4.0, num_thresholds) # the maximum squared distance between two normalized vectors is 4, so the range is from 0 to 4
 
     best_threshold = 0.0
     best_accuracy = 0.0
