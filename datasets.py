@@ -88,10 +88,10 @@ class BaseDatasetClass(torch.utils.data.Dataset):
     def get_default_labels(self):
         label = {
             'face_recognition' : -1,
-            'emotion_recognition' : -1,
-            'age_estimation' : -1,
-            'gender_recognition' : -1,
-            'race_recognition' : -1
+            'emotion' : -1,
+            'age' : -1,
+            'gender' : -1,
+            'race' : -1
         }
         if self.return_name:
             label['dataset_name'] = self.__class__.__name__
