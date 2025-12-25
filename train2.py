@@ -139,6 +139,7 @@ def main(**kwargs):
     start_factor = kwargs.get('start_factor')
     min_lr = kwargs.get('min_lr')
     warmup_epochs = kwargs.get('warmup_epochs')
+    freeze_backbone_epochs = kwargs.get('freeze_backbone_epochs')
     learning_rate = kwargs.get('learning_rate')
 
 
@@ -175,7 +176,7 @@ def main(**kwargs):
         raise ValueError(f"Unsupported scheduler: {lr_scheduler_name}")
 
     scaler = torch.amp.GradScaler(device = device)
-    dwa = DynamicWeightAverage(num_tasks = 4)
+    dwa = DynamicWeightAverage(num_tasks = 5)
     weights = dwa.calculate_weights(avg_losses_current_epoch=None)
 
 
@@ -195,55 +196,177 @@ def main(**kwargs):
     # Training loop
     model.train()
     for epoch in range(start_epoch, epochs):
+
+        if epoch < freeze_backbone_epochs:
+            print(f"🔒 Epoch {epoch}: Backbone is FROZEN (Warmup Phase)")            
+
+            for param in backbone_params:
+                param.requires_grad = False
+
+            for param in other_params: # just to make sure the head parameters are trainable
+                param.requires_grad = True
+
+        elif epoch == freeze_backbone_epochs:
+            for param in backbone_params:
+                print(f"🔓 Epoch {epoch}: Unfreezing Backbone! (Finetuning Phase)")
+                param.requires_grad = True
+
+        
+
         running_face_rec_loss = 0.0
         running_emotion_rec_loss = 0.0
         running_age_estimation_loss = 0.0
         running_gender_rec_loss = 0.0
+        running_race_rec_loss = 0.0
+
 
         num_face_rec_samples = 0
         num_emotion_samples = 0
-        num_age_gender_samples = 0
+        num_age_samples = 0
+        num_gender_samples = 0
+        num_race_samples = 0
+
 
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
 
-        for i, batch in progress_bar:
+        for counter, batch in progress_bar:
             
             images = batch[0]
             labels = batch[1]
+            images = images.to(device, non_blocking=True) # The labels are in a dict format, which cannot be moved to cuda. Task labels will be extracted below and converted to cuda one by one.
 
-            # Extract data
-            # Face Recognition
-            face_rec_labels = labels['face_recognition']
-            face_rec_mask = (face_rec_labels != -1)
-            face_rec_images = images[face_rec_mask].to(device, non_blocking=True)
-            face_rec_labels = face_rec_labels[face_rec_mask].to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none = True)
+
+            # forward pass
+            with torch.amp.autocast(device_type = device):
+                (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output = model(images)
+
+                # Face recognition loss
+                face_recognition_labels = labels['face_recognition'].to(device, non_blocking=True)
+                face_recognition_mask = face_recognition_labels != -1
+
+                if face_recognition_mask.sum() > 0: # check if we have face recognition samples in this batch
+                    valid_embeddings = normalized_embedding[face_recognition_mask]
+                    valid_embedding_norms = embedding_norm[face_recognition_mask]
+                    valid_labels = face_recognition_labels[face_recognition_mask]
+
+                    face_rec_logits = model.get_face_recognition_logits(valid_embeddings, valid_embedding_norms, valid_labels)
+                    face_rec_loss = F.cross_entropy(face_rec_logits, valid_labels)
+                    num_face_rec_samples += face_recognition_mask.sum().item()
+
+                
+                
+                # Emotion recognition
+                emotion_labels = labels['emotion'].to(device, non_blocking=True)
+                emotion_mask = emotion_labels != -1
+                if emotion_mask.sum() > 0: # check if we have emotion recognition samples in this batch
+                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask])
+                    num_emotion_samples += emotion_mask.sum().item()
+                
+
+
+
+                # Age estimation
+                age_labels = labels['age'].to(device, non_blocking=True)
+                age_mask = age_labels != -1
+                if age_mask.sum() > 0: # check if we have age estimation samples in this batch
+                    age_loss = F.l1_loss(age_output[age_mask], age_labels[age_mask].view(-1, 1))
+                    num_age_samples += age_mask.sum().item()
+
+
+
+                # Gender recognition
+                gender_labels = labels['gender'].to(device, non_blocking=True)
+                gender_mask = gender_labels != -1
+                if gender_mask.sum() > 0: # check if we have gender recognition samples in this batch
+                    gender_loss = F.binary_cross_entropy_with_logits(gender_output[gender_mask], gender_labels[gender_mask].view(-1, 1).float())
+                    num_gender_samples += gender_mask.sum().item()
+                
+
+                
+                # Race recognition
+                race_labels = labels['race'].to(device, non_blocking=True)
+                race_mask = race_labels != -1
+                if race_mask.sum() > 0: # check if we have race recognition samples in this batch
+                    race_loss = F.cross_entropy(race_output[race_mask], race_labels[race_mask])
+                    num_race_samples += race_mask.sum().item()
+                
+                
+
+                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss]
+                total_loss = 0
+                for i in range(len(weights)):
+                    total_loss += weights[i] * losses[i]
             
-            # Emotion Recognition
-            emotion_labels = labels['emotion_recognition']
-            emotion_recognition_mask = (emotion_labels != -1)
-            emotion_images = images[emotion_recognition_mask].to(device, non_blocking=True)
-            emotion_labels = emotion_labels[emotion_recognition_mask].to(device, non_blocking=True)
-
-            # Age estimation
-            age_gender_labels = labels['age_estimation']
-            age_gender_mask = (age_gender_labels['age'] != -1)
-            age_gender_images = images[age_gender_mask].to(device, non_blocking=True)
-            age_gender_labels = age_gender_labels[age_gender_mask].to(device, non_blocking=True)
-
-            # Gender Recognition
-            gender_recognition_labels = labels['gender_recognition']
-            gender_recognition_mask = (gender_recognition_labels != -1)
-            gender_recognition_images = images[gender_recognition_mask].to(device, non_blocking=True)
-            gender_recognition_labels = gender_recognition_labels[gender_recognition_mask].to(device, non_blocking=True)
-
-            # Race Recognition
-            race_recognition_labels = labels['race_recognition']
-            race_recognition_mask = (race_recognition_labels != -1)
-            race_recognition_images = images[race_recognition_mask].to(device, non_blocking=True)
-            race_recognition_labels = race_recognition_labels[race_recognition_mask].to(device, non_blocking=True)
-
-
             
+            # backward pass
+            if total_loss != 0:
+                scaler.scale(total_loss).backward()
+                
+                # gradient clipping
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+
+                # update weights
+                scaler.step(optimizer)
+                scaler.update()
+            
+            running_face_rec_loss += face_rec_loss.item() * face_recognition_mask.sum().item()
+            running_emotion_rec_loss += emotion_loss.item() * emotion_mask.sum().item()
+            running_age_estimation_loss += age_loss.item() * age_mask.sum().item()
+            running_gender_rec_loss += gender_loss.item() * gender_mask.sum().item()
+            running_race_rec_loss += race_loss.item() * race_mask.sum().item()
+
+            progress_bar.set_postfix(
+                loss=f"{total_loss.item():.4f}",
+                fr_loss = f"{face_rec_loss.item():.4f}",
+                em_loss = f"{emotion_loss.item():.4f}",
+                age_loss = f"{age_loss.item():.4f}",
+                gen_loss = f"{gender_loss.item():.4f}",
+                race_loss = f"{race_loss.item():.4f}",
+                lr=f"{optimizer.param_groups[1]['lr']:.6f}",
+                lr_backbone = f'{optimizer.param_groups[0]['lr']:.6f}',
+                weights = f'{weights}'
+            )
+
+        scheduler.step()
+
+        epoch_fr_loss = running_face_rec_loss / num_face_rec_samples
+        epoch_em_loss = running_emotion_rec_loss / num_emotion_samples
+        epoch_age_loss = running_age_estimation_loss / num_age_samples
+        epoch_gen_loss = running_gender_rec_loss / num_gender_samples
+        epoch_race_loss = running_race_rec_loss / num_race_samples
+        weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss]))
+        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss
+
+        print(f"\nEpoch {epoch+1} Summary:")
+        print(f"  Total Loss: {epoch_loss:.4f}")
+        print(f"  Face Recognition Loss: {epoch_fr_loss:.4f}")
+        print(f"  Emotion Loss: {epoch_em_loss:.4f}")
+        print(f"  Age Loss: {epoch_age_loss:.4f}")
+        print(f"  Gender Loss: {epoch_gen_loss:.4f}")
+        print(f"  Race Loss: {epoch_race_loss:.4f}")
+        print(f"  Weights: {weights}")
+
+        checkpoint = { 
+            'epoch' : epoch,
+            'model_state_dict' : model.state_dict(),
+            'optimizer_state_dict' : optimizer.state_dict(),
+            'scheduler_state_dict' : scheduler.state_dict(),
+            'loss' : epoch_loss,
+        }
+
+        # Create the checkpoint file if it doesn't exist.
+        if not os.path.exists(checkpoint_path):
+            os.makedirs(os.path.split(checkpoint_path)[0], exist_ok = True)
+            f = open(checkpoint_path, 'x')
+        
+        torch.save(
+            checkpoint, 
+            checkpoint_path
+        )
+
+
             
 if __name__ == '__main__':
     for key, value in config.items():
