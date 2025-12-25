@@ -88,7 +88,7 @@ def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
     loaded_dataset_names = []
     for name in datasets_to_test:
         if name in test_datasets_map:
-            test_datasets.append(test_datasets_map[name](image_transform=image_transform))
+            test_datasets.append(test_datasets_map[name](transform=image_transform))
             loaded_dataset_names.append(name)
         else:
             print(f"Warning: Dataset '{name}' not recognized and will be skipped.")
