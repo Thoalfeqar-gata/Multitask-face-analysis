@@ -3,7 +3,7 @@ import torch
 from torchvision.transforms import v2
 import torch.nn.functional as F
 import datasets
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, roc_auc_score, auc
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, accuracy_score
@@ -98,9 +98,9 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
     """
     model.to(device)
     model.eval()
-    correct = 0
-    total = 0
-    total_loss = 0.0
+    true_labels = []
+    predicted_labels = []
+    probs_list = []
     
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Validating Gender", leave=False):
@@ -111,17 +111,26 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
             # Forward pass - Extract only gender output
             _, _, _, gender_out, _ = model(images)
             
-            # Loss (BCEWithLogits usually expects floats)
-            loss = F.binary_cross_entropy_with_logits(gender_out, targets.view(-1, 1).float())
-            total_loss += loss.item() * len(targets)
-            
             # Accuracy (Sigmoid > 0.5)
             probs = torch.sigmoid(gender_out)
             preds = (probs > 0.5).long()
-            correct += (preds.view(-1) == targets.view(-1)).sum().item()
-            total += len(targets)
 
-    return correct / total, total_loss / total # accuracy, loss
+            true_labels.extend(targets.cpu().numpy())
+            predicted_labels.extend(preds.cpu().numpy())
+            probs_list.extend(probs.cpu().numpy())
+
+    true_labels = np.array(true_labels)
+    predicted_labels = np.array(predicted_labels)
+    probs_list = np.array(probs_list)
+
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    f1 = f1_score(true_labels, predicted_labels)
+    precision = precision_score(true_labels, predicted_labels)
+    recall = recall_score(true_labels, predicted_labels)
+    cm = confusion_matrix(true_labels, predicted_labels)
+    fpr, tpr, thresholds = roc_curve(true_labels, probs_list)
+    auc_score = roc_auc_score(true_labels, probs_list)
+    return accuracy, f1, precision, recall, cm, fpr, tpr, auc_score, thresholds
 
 
 def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
@@ -131,9 +140,8 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
     """
     model.to(device)
     model.eval()
-    correct = 0
-    total = 0
-    total_loss = 0.0
+    predicted_labels = []
+    actual_labels = []
     
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Validating Race", leave=False):
@@ -141,19 +149,25 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
             images = images.to(device)
             targets = labels['race'].to(device)
             
-            # Forward pass - Extract only race output
             _, _, _, _, race_out = model(images)
             
-            # Loss
-            loss = F.cross_entropy(race_out, targets)
-            total_loss += loss.item() * len(targets)
-            
-            # Accuracy
             preds = torch.argmax(race_out, dim=1)
-            correct += (preds == targets).sum().item()
-            total += len(targets)
 
-    return correct / total, total_loss / total # accuracy, loss
+            predicted_labels.extend(preds.cpu().numpy())
+            actual_labels.extend(targets.cpu().numpy())
+
+    predicted_labels = np.array(predicted_labels)
+    actual_labels = np.array(actual_labels)
+
+    accuracy = accuracy_score(actual_labels, predicted_labels)
+    f1 = f1_score(actual_labels, predicted_labels, average='weighted')
+    precision = precision_score(actual_labels, predicted_labels, average='weighted')
+    recall = recall_score(actual_labels, predicted_labels, average='weighted')
+    cm = confusion_matrix(actual_labels, predicted_labels)
+    
+    return accuracy, f1, precision, recall, cm
+
+
 
 
 

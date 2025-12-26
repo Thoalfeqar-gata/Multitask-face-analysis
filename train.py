@@ -453,7 +453,7 @@ def main(**kwargs):
     # Plot dynamic weight average history
     task_names = ['Face Recognition', 'Emotion Recognition', 'Age Estimation', 'Gender Recognition', 'Race Recognition']
     plt.figure(figsize=(10, 5), dpi=600)
-    plt.title('The history of the loss weights using Dynamic Weight Average.')
+    plt.title('The history of the loss weights per task using Dynamic Weight Average.')
     
     weight_history = np.array(losses_weights_history)
     
@@ -466,7 +466,7 @@ def main(**kwargs):
         
     plt.legend(loc='best')
     plt.xlabel('Epoch')
-    plt.ylabel('Class weight')
+    plt.ylabel('Task weight')
     
     # Ensure directory exists before saving
     os.makedirs(os.path.join('data', 'figures', 'MultiTask Training'), exist_ok=True)
