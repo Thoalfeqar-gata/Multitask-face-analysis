@@ -26,7 +26,7 @@ torch.set_float32_matmul_precision('medium')
 
 def main(**kwargs): 
 
-    use_validation = False # toggle validation datasets on or off. 
+    use_validation = True # toggle validation datasets on or off. 
     return_name = False # Whether to return the name of the dataset or not.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     checkpoint_path = kwargs.get('resume_from_checkpoint')

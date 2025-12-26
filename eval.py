@@ -115,7 +115,7 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
     return correct / total, total_loss / total # accuracy, loss
 
 
-def evalate_race(model, dataloader, device):
+def evaluate_race(model, dataloader, device = 'cuda'):
     """
     Evaluates Race Recognition (Multi-class Classification).
     Returns: Average Loss, Accuracy
@@ -155,7 +155,7 @@ def evalate_race(model, dataloader, device):
 ##################################
 
 
-def evaluate_face_recognition(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'], batch_size = 128):
+def evaluate_face_recognition(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF', 'AgeDB30', 'VGG2FP'], batch_size = 128):
     """
     Evaluates a face recognition backbone on standard benchmarks using 10-fold cross-validation.
 
@@ -180,7 +180,7 @@ def evaluate_face_recognition(backbone, datasets_to_test = ['LFW', 'CPLFW', 'CAL
 # --- Feature Extraction and Distance Calculation ---
 
 def get_face_recognition_distances_from_backbone(backbone: torch.nn.Module,
-                                                 datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF'],
+                                                 datasets_to_test = ['LFW', 'CPLFW', 'CALFW', 'CFP-FP', 'CFP-FF', 'AgeDB30', 'VGG2FP'],
                                                  use_tta = True,
                                                  batch_size = 512,
                                                  use_gpu = True,
