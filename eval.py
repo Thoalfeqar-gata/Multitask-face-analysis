@@ -60,8 +60,8 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
     """
     model.to(device)
     model.eval()
-    total_mae = 0.0
-    total = 0
+    true_ages = []
+    predicted_ages_list = []
     
     # Pre-create the age vector (0, 1, ..., 101) once to save time
     age_values = torch.arange(min_age, max_age + 1, dtype=torch.float32, device=device).view(1, -1)
@@ -70,27 +70,25 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
         for batch in tqdm(dataloader, desc="Validating Age", leave=False):
             images, labels = batch
             images = images.to(device)
-            # Targets are ground truth ages (e.g., 25, 40)
+
             targets = labels['age'].to(device).float()
             
-            # Forward pass -> Get Logits [Batch, 102]
             _, _, age_logits, _, _ = model(images)
             
-            # 1. Convert Logits to Probabilities
-            probs = F.softmax(age_logits, dim=1) # [Batch, 102]
+            probs = F.softmax(age_logits, dim=1)
+            predicted_ages = torch.sum(probs * age_values, dim=1) 
             
-            # 2. Calculate Expected Age (Weighted Sum)
-            # sum(Prob * Age_Value) -> Single scalar per image
-            predicted_ages = torch.sum(probs * age_values, dim=1) # Shape: [Batch]
-            
-            # 3. Calculate MAE
-            # predicted_ages is [Batch], targets is [Batch]
-            mae = F.l1_loss(predicted_ages, targets)
-            
-            total_mae += mae.item() * len(targets)
-            total += len(targets)
-            
-    return total_mae / total
+            true_ages.extend(targets.cpu().numpy())
+            predicted_ages_list.extend(predicted_ages.cpu().numpy())
+    
+    
+    true_ages = np.array(true_ages)
+    predicted_ages_list = np.array(predicted_ages_list)
+
+    mae = np.mean(np.abs(true_ages - predicted_ages_list))
+
+    return mae, true_ages, predicted_ages_list
+
 
 
 def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
