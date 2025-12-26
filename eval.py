@@ -6,6 +6,7 @@ import datasets
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
 from tqdm import tqdm
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, accuracy_score
 
 ##################################
 
@@ -18,11 +19,11 @@ def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLo
     Evaluates Emotion Recognition (Multi-class Classification).
     Returns: Average Loss, Accuracy
     """
+    model.to(device)
     model.eval()
-    correct = 0
-    total = 0
-    total_loss = 0.0
-    
+
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Validating Emotion", leave=False):
             images, labels = batch
@@ -32,16 +33,24 @@ def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLo
             # Forward pass
             _, emotion_out, _, _, _ = model(images)
             
-            # Loss
-            loss = F.cross_entropy(emotion_out, targets)
-            total_loss += loss.item() * len(targets)
-            
-            # Accuracy
             preds = torch.argmax(emotion_out, dim=1)
-            correct += (preds == targets).sum().item()
-            total += len(targets)
 
-    return correct / total, total_loss / total # accuracy, loss
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(targets.cpu().numpy())
+
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    accuracy = accuracy_score(all_labels, all_preds)
+    f1 = f1_score(all_labels, all_preds, average='weighted')
+    precision = precision_score(all_labels, all_preds, average='weighted')
+    recall = recall_score(all_labels, all_preds, average='weighted')
+    cm = confusion_matrix(all_labels, all_preds)
+    
+    return accuracy, f1, precision, recall, cm
+
+
+
+
 
 
 def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device='cuda', min_age=0, max_age=101):
@@ -49,6 +58,7 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
     Evaluates Age Estimation (DLDL approach).
     Returns: Mean Absolute Error (MAE) in years.
     """
+    model.to(device)
     model.eval()
     total_mae = 0.0
     total = 0
@@ -88,6 +98,7 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
     Evaluates Gender Recognition (Binary Classification).
     Returns: Average Loss, Accuracy
     """
+    model.to(device)
     model.eval()
     correct = 0
     total = 0
@@ -115,11 +126,12 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
     return correct / total, total_loss / total # accuracy, loss
 
 
-def evaluate_race(model, dataloader, device = 'cuda'):
+def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
     """
     Evaluates Race Recognition (Multi-class Classification).
     Returns: Average Loss, Accuracy
     """
+    model.to(device)
     model.eval()
     correct = 0
     total = 0
@@ -377,7 +389,7 @@ def compute_metrics_at_threshold(distances, labels, threshold, eta=1e-11):
     fp = np.sum((predictions == 1) & (labels == 0))
     tn = np.sum((predictions == 0) & (labels == 0))
     fn = np.sum((predictions == 0) & (labels == 1))
-
+    
     total_samples = len(labels)
     accuracy = (tp + tn) / (total_samples + eta)
     precision = tp / (tp + fp + eta)
