@@ -441,7 +441,7 @@ def main(**kwargs):
             print(f'Accuracy for FairFace (gender recognition) = {gender_accuracy}.')
 
             # Race recognition
-            race_accuracy, race_loss = eval.evalate_race(model = model, dataloader = fairface_test_db, device = device)
+            race_accuracy, race_loss = eval.evaluate_race(model = model, dataloader = fairface_test_db, device = device)
             print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
     
     # Save the final model
