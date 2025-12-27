@@ -164,7 +164,7 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
     precision = precision_score(actual_labels, predicted_labels, average='weighted')
     recall = recall_score(actual_labels, predicted_labels, average='weighted')
     cm = confusion_matrix(actual_labels, predicted_labels)
-    
+
     return accuracy, f1, precision, recall, cm
 
 

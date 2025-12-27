@@ -106,7 +106,7 @@ class EmotionRecognitionSubnet(nn.Module):
 
 
 class RaceRecognitionSubnet(nn.Module):
-    def __init__(self, num_classes = 7, transformer_embedding_dim = 96):
+    def __init__(self, num_classes = 5, transformer_embedding_dim = 96):
         super(RaceRecognitionSubnet, self).__init__()
         self.fusion = MultiScaleFusion(out_channels = [47, 93, 186, 186], transformer_embedding_dim=transformer_embedding_dim)
         self.cbam = CBAM(channels = 512)
