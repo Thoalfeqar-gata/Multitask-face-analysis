@@ -1,8 +1,8 @@
 import os
 config = {
-    'backbone_name' : 'davit_t',
-    'pretrained_backbone_path' : os.path.join('data', 'models', 'davit_t_adaface_MS1MV2_Dataset', 'backbone.pth'),
-    'pretrained_face_recognition_path' : os.path.join('data', 'models', 'davit_t_adaface_MS1MV2_Dataset', 'recognition_subnet.pth'),
+    'backbone_name' : 'davit_s',
+    'pretrained_backbone_path' : os.path.join('data', 'models', 'davit_s_adaface_MS1MV2_Dataset', 'backbone.pth'),
+    'pretrained_face_recognition_path' : os.path.join('data', 'models', 'davit_s_adaface_MS1MV2_Dataset', 'recognition_subnet.pth'),
     'resume_from_checkpoint' : os.path.join('checkpoints', 'multitask_training_test_davit', 'model.pth'),
     'head_type' : 'adaface',
     'embedding_dim' : 512,
@@ -11,7 +11,7 @@ config = {
     'h' : 0.333,
     't_alpha' : 0.99,
     'optimizer' : 'adamw',
-    'learning_rate' : 1e-3,
+    'learning_rate' : 5e-4,
     'start_factor' : 1e-1,
     'min_lr' : 5e-6,
     'weight_decay' : 0.05,
@@ -19,7 +19,6 @@ config = {
     'max_epochs' : 24,
     'warmup_epochs' : 5,
     'freeze_backbone_epochs' : 3,
-    'batch_size' : 320,
-    'min_num_images_per_class' : 20,
+    'batch_size' : 240,
     'num_workers' : 8,
 }

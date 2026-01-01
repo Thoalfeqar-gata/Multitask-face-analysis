@@ -16,7 +16,7 @@ from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionS
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.models import MultiTaskFaceAnalysisModel
-from configs.train_multitask import config
+from configs.train_multitask_davit_s_ms1mv2_face_age_gender_race_emotion_attribute import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
 from utility_scripts.utility_functions import dldl_loss

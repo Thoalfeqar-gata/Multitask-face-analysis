@@ -141,7 +141,7 @@ class VGGFace(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'VGG-Face'), transform = None, **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
 
-class CasiabWebFace(FaceRecognitionClass):
+class CasiaWebFace(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'Casia webface'), transform = None, **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
 

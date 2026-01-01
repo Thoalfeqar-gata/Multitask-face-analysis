@@ -12,7 +12,7 @@ from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmenter import Augmenter
-from configs.train_davit_ms1mv2_adaface import config # change the config to change the script's behaviour
+from configs.train_davit_s_ms1mv2_adaface import config # change the config to change the script's behaviour
 
 from multitask.subnets import FaceRecognitionEmbeddingSubnet
 
@@ -102,6 +102,7 @@ class FaceRecognitionModel(pl.LightningModule):
         self.global_counter += 1
         
         images, labels = batch
+        labels = labels['face_recognition']
         normalized_embedding, embedding_norm = self(images)
         
         output = self.margin_head(normalized_embedding, embedding_norm, labels)
@@ -233,16 +234,15 @@ class FaceRecognitionDataModule(pl.LightningDataModule):
         """
         # Training dataset
         dataset_class = getattr(datasets, self.dataset_name)
-        self.train_dataset = dataset_class(image_transform=self.train_transform)
-        self.train_dataset.discard_classes(self.min_num_image_per_class)
-        self.num_classes = len(torch.unique(torch.tensor(self.train_dataset.labels)))
+        self.train_dataset = dataset_class(transform=self.train_transform)
+        self.num_classes = self.train_dataset.number_of_classes()
         
         # Validation datasets
         if self.val_datasets:
             self.instantiated_val_datasets = []
             for val_dataset_name in self.val_datasets:
                 val_dataset_class = getattr(datasets, val_dataset_name)
-                self.instantiated_val_datasets.append(val_dataset_class(image_transform=self.val_transform))
+                self.instantiated_val_datasets.append(val_dataset_class(transform=self.val_transform))
 
 
     def train_dataloader(self):
@@ -288,7 +288,6 @@ def main(args):
 
     val_transform = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.CenterCrop((112, 112)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
@@ -297,6 +296,9 @@ def main(args):
     data_module.setup()
     
     model = FaceRecognitionModel(num_classes=data_module.num_classes, **args)
+    
+    checkpoint_path = os.path.join('checkpoints',f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}')
+    os.makedirs(checkpoint_path, exist_ok = True)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=f'checkpoints/{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}',
@@ -314,9 +316,15 @@ def main(args):
         accelerator='auto',
         precision=args['precision'],
         check_val_every_n_epoch=1,
+        gradient_clip_val=args['gradient_clip_val'],
+        gradient_clip_algorithm=args['gradient_clip_algorithm'],
     )
 
-    trainer.fit(model, data_module, ckpt_path=args['resume_from_checkpoint'])
+    if len(os.listdir(checkpoint_path)) > 0:
+        ckpt_path = os.path.join(checkpoint_path, os.listdir(checkpoint_path)[0])
+        trainer.fit(model, data_module, ckpt_path=ckpt_path)
+    else:
+        trainer.fit(model, data_module)
 
     # Save after training
     output_path = os.path.join('data', 'models', f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}', 'model.pth')
