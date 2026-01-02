@@ -96,7 +96,7 @@ def main(**kwargs):
         train_db_list,
         batch_size = batch_size, 
         num_workers = num_workers,
-        epoch_size = 2_000_000,
+        epoch_size = int(kwargs.get('epoch_size')),
     )
 
 
@@ -460,30 +460,29 @@ def main(**kwargs):
                 model.backbone,
                 model.face_recognition_embedding_subnet
             )
-            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['CPLFW', 'CALFW'])
+            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['LFW', 'CPLFW', 'CALFW'])
 
             for key, db_metrics in metrics.items():
                 accuracy, _, _, f1_score, _, _, _, _ = db_metrics
                 print(f'Accuracy for {key} = {accuracy}.')
-                print(f'F1 score for {key} = {f1_score}')
 
             # Emotion Recognition
-            emotion_accuracy, emotion_loss = eval.evaluate_emotion(model = model, dataloader = affectnet_validation_db)
+            emotion_accuracy, _, _, _, _= eval.evaluate_emotion(model = model, dataloader = affectnet_validation_db)
             print(f'Accuracy for AffectNet (emotion recognition) = {emotion_accuracy}.')
 
             # Age estimation
-            age_mae = eval.evaluate_age(model = model, dataloader = morph_test_db)
+            age_mae, _, _ = eval.evaluate_age(model = model, dataloader = morph_test_db)
             print(f'MAE for MORPH (age estimation) = {age_mae}.')
 
             # Gender recognition
-            gender_accuracy, gender_loss = eval.evaluate_gender(model = model, dataloader = morph_test_db)
+            gender_accuracy, _, _, _, _, _, _, _, _ = eval.evaluate_gender(model = model, dataloader = morph_test_db)
             print(f'Accuracy for MORPH (gender recognition) = {gender_accuracy}.')
 
-            gender_accuracy, gender_loss = eval.evaluate_gender(model = model, dataloader = fairface_test_db)
+            gender_accuracy, _, _, _, _, _, _, _, _ = eval.evaluate_gender(model = model, dataloader = fairface_test_db)
             print(f'Accuracy for FairFace (gender recognition) = {gender_accuracy}.')
 
             # Race recognition
-            race_accuracy, race_loss = eval.evaluate_race(model = model, dataloader = fairface_test_db, device = device)
+            race_accuracy, _, _, _, _ = eval.evaluate_race(model = model, dataloader = fairface_test_db, device = device)
             print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
     
     # Save the final model
@@ -513,10 +512,10 @@ def main(**kwargs):
     plt.ylabel('Task weight')
     
     # Ensure directory exists before saving
-    os.makedirs(os.path.join('data', 'figures', 'MultiTask Training'), exist_ok=True)
+    os.makedirs(os.path.join('data', 'figures', output_folder_name), exist_ok=True)
     
     plt.savefig(
-        os.path.join('data', 'figures', 'MultiTask Training', 'Task_loss_weights_history.png')
+        os.path.join('data', 'figures', output_folder_name, 'Task_loss_weights_history.png')
     )
     plt.close() # Good practice to close the figure to free memory
 
