@@ -18,7 +18,8 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         # Backbone args
         self.backbone_name = kwargs.get('backbone_name')
         self.pretrained_backbone_path = kwargs.get('pretrained_backbone_path')
-        self.pretrained_face_recognition_path = kwargs.get('pretrained_face_recognition_path')
+        self.pretrained_face_recognition_path = kwargs.get('pretrained_face_recognition_subnet_path')
+        self.pretrained_margin_head_path = kwargs.get('pretrained_margin_head_path')
         self.imagenet_pretrained = kwargs.get('pretrained')
 
         # Face recognition args
@@ -78,6 +79,10 @@ class MultiTaskFaceAnalysisModel(nn.Module):
             h = self.h,
             t_alpha = self.t_alpha
         )
+
+        if self.pretrained_margin_head_path:
+            self.margin_head.load_state_dict(torch.load(self.pretrained_margin_head_path))
+            print(f'Loaded pretrained margin head from {self.pretrained_margin_head_path}\n')
 
         # Emotion Recognition
         self.emotion_recognition_subnet = EmotionRecognitionSubnet(

@@ -28,8 +28,9 @@ def main(**kwargs):
 
     use_validation = True # toggle validation datasets on or off. 
     return_name = False # Whether to return the name of the dataset or not.
+    output_folder_name = kwargs.get('output_folder_name')
+    checkpoint_path = os.path.join('checkpoints', output_folder_name, 'model.pth')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    checkpoint_path = kwargs.get('resume_from_checkpoint')
 
     # train and test transforms
     train_face_rec_transform = v2.Compose([ # for face recognition during training.
@@ -147,48 +148,62 @@ def main(**kwargs):
 
 
     # Separate parameters into backbone and other parts and count the parameters
+    margin_head_params = []
+    face_rec_params = []
     backbone_params = []
     other_params = []
     backbone_params_count = 0
-    face_rec_subnet_parameters = 0
-    emotion_rec_subnet_parameters = 0
-    age_estimation_subnet_parameters = 0
-    gender_rec_subnet_parameters = 0
-    race_rec_subnet_parameters = 0
+    face_rec_subnet_parameters_count = 0
+    margin_head_params_count = 0
+    emotion_rec_subnet_parameters_count = 0
+    age_estimation_subnet_parameters_count = 0
+    gender_rec_subnet_parameters_count = 0
+    race_rec_subnet_parameters_count = 0
     for name, param in model.named_parameters():
         if 'backbone' in name:
             backbone_params.append(param)
             backbone_params_count += param.numel()
+
         elif 'face_recognition_embedding_subnet' in name:
             other_params.append(param)
-            face_rec_subnet_parameters += param.numel()
+            face_rec_subnet_parameters_count += param.numel()
+
+        elif 'margin_head' in name:
+            margin_head_params.append(param)
+            margin_head_params_count += param.numel()
+
         elif 'emotion_recognition_subnet' in name:
             other_params.append(param)
-            emotion_rec_subnet_parameters += param.numel()
+            emotion_rec_subnet_parameters_count += param.numel()
+
         elif 'age_estimation_subnet' in name:
             other_params.append(param)
-            age_estimation_subnet_parameters += param.numel()
+            age_estimation_subnet_parameters_count += param.numel()
+
         elif 'gender_recognition_subnet' in name:
             other_params.append(param)
-            gender_rec_subnet_parameters += param.numel()
+            gender_rec_subnet_parameters_count += param.numel()
+
         elif 'race_recognition_subnet' in name:
             other_params.append(param)
-            race_rec_subnet_parameters += param.numel()
+            race_rec_subnet_parameters_count += param.numel()
+
         else:
             other_params.append(param)
     
 
 
     print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
-    print(f'Face recognition subnet parameters: {face_rec_subnet_parameters} <'.ljust(50, '='))
-    print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters} <'.ljust(50, '='))
-    print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters} <'.ljust(50, '='))
-    print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters} <'.ljust(50, '='))
-    print(f'Race recognition subnet parameters: {race_rec_subnet_parameters} <'.ljust(50, '='))
+    print(f'Face recognition subnet parameters: {face_rec_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Margin head parameters:  {margin_head_params_count} <'.ljust(50, '='))
+    print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Race recognition subnet parameters: {race_rec_subnet_parameters_count} <'.ljust(50, '='))
 
     # Create parameter groups with different learning rates
     param_groups = [
-        {'params': backbone_params, 'lr': learning_rate / 20},
+        {'params': backbone_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
         {'params': other_params, 'lr': learning_rate}
     ]
 
@@ -209,10 +224,25 @@ def main(**kwargs):
     else:
         raise ValueError(f"Unsupported scheduler: {lr_scheduler_name}")
 
-    scaler = torch.amp.GradScaler(device = device)
+
+    precision_mode = kwargs.get('precision')
+
+    if precision_mode == 'bf16-mixed':
+        amp_dtype = torch.bfloat16
+        use_scaler = False # no need to use scaler since bf16-mixed has enough range
+    elif precision_mode == '32':
+        amp_dtype = torch.float32
+        use_scaler = False
+    else:
+        amp_dtype == torch.float16
+        use_scaler = True
+    print(f'Using amp dtype: {amp_dtype}')
+
+    scaler = torch.amp.GradScaler(device = device, enabled = use_scaler)
     dwa = DynamicWeightAverage(num_tasks = 5)
     losses_weights = dwa.calculate_weights(avg_losses_current_epoch=None)
     losses_weights_history = [losses_weights]
+
 
 
     model.to(device)
@@ -236,20 +266,32 @@ def main(**kwargs):
         model.train() # Put here to ensure the epoch starts with the model in training mode
 
         if epoch < freeze_backbone_epochs:
-            print(f"🔒 Epoch {epoch}: Backbone is FROZEN (Warmup Phase)")            
+            print(f"🔒 Epoch {epoch}: Backbone + face recognition subnet + margin head are FROZEN (Warmup Phase)")            
 
             for param in backbone_params:
+                param.requires_grad = False
+            
+            for param in face_rec_params:
+                param.requires_grad = False
+            
+            for param in margin_head_params:
                 param.requires_grad = False
 
             for param in other_params: # just to make sure the head parameters are trainable
                 param.requires_grad = True
 
         elif epoch == freeze_backbone_epochs:
-            print(f"🔓 Epoch {epoch}: Unfreezing Backbone! (Finetuning Phase)")
+            print(f"🔓 Epoch {epoch}: Unfreezing! (Finetuning Phase)")
             for param in backbone_params:
                 param.requires_grad = True
-
-        
+            
+            for param in face_rec_params:
+                param.requires_grad = True
+            
+            for param in margin_head_params:
+                param.requires_grad = True
+            
+            
 
         running_face_rec_loss = 0.0
         running_emotion_rec_loss = 0.0
@@ -276,7 +318,7 @@ def main(**kwargs):
             optimizer.zero_grad(set_to_none = True)
 
             # forward pass
-            with torch.amp.autocast(device_type = device):
+            with torch.amp.autocast(device_type = device, dtype = amp_dtype, enabled = (precision_mode != '32')):
                 (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output = model(images)
 
                 # Face recognition loss
@@ -344,7 +386,7 @@ def main(**kwargs):
                 
                 # gradient clipping
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=kwargs.get('gradient_clip_val'))
 
                 # update weights
                 scaler.step(optimizer)
@@ -445,9 +487,11 @@ def main(**kwargs):
             print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
     
     # Save the final model
+    output_model_path = os.path.join('data', 'models', output_folder_name)
+    os.makedirs(output_model_path, exist_ok = True)
     torch.save(
         model.state_dict(), 
-        os.path.join('data', 'models', 'multitask_davit_t_face_emotion_age_gender_race', 'model.pth')
+        os.path.join(output_model_path, 'model.pth')
     )
 
     # Plot dynamic weight average history

@@ -327,12 +327,22 @@ def main(args):
         trainer.fit(model, data_module)
 
     # Save after training
-    output_path = os.path.join('data', 'models', f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}', 'model.pth')
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_path = os.path.join('data', 'models', f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}')
+    os.makedirs(output_path, exist_ok=True)
     
     torch.save(
         model.backbone.state_dict(),
-        output_path
+        os.path.join(output_path, 'backbone.pth')
+    )
+
+    torch.save(
+        model.recognition_subnet.state_dict(),
+        os.path.join(output_path, 'recognition_subnet.pth')
+    )
+
+    torch.save(
+        model.margin_head.state_dict(),
+        os.path.join(output_path, 'margin_head.pth')
     )
 
 
