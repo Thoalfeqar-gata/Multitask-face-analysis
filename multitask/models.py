@@ -5,6 +5,7 @@ import backbones.backbones as backbones
 import multitask.face_recognition_heads as face_recognition_heads
 from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
                               EmotionRecognitionSubnet, RaceRecognitionSubnet
+from multitask.fusion import MultiScaleFusion
 
 
 
@@ -85,43 +86,39 @@ class MultiTaskFaceAnalysisModel(nn.Module):
             print(f'Loaded pretrained margin head from {self.pretrained_margin_head_path}\n')
 
         # Emotion Recognition
-        self.emotion_recognition_subnet = EmotionRecognitionSubnet(
-            transformer_embedding_dim = self.transformer_embedding_dim
-        )
+        self.emotion_recognition_subnet = EmotionRecognitionSubnet()
 
         # Age Estimation
-        self.age_estimation_subnet = AgeEstimationSubnet(
-            transformer_embedding_dim=self.transformer_embedding_dim
-        )
+        self.age_estimation_subnet = AgeEstimationSubnet()
 
         # Gender Recognition
-        self.gender_recognition_subnet = GenderRecognitionSubnet(
-            transformer_embedding_dim=self.transformer_embedding_dim
-        )
+        self.gender_recognition_subnet = GenderRecognitionSubnet()
 
-        self.race_recognition_subnet = RaceRecognitionSubnet(
-            transformer_embedding_dim=self.transformer_embedding_dim
-        )
-    
+        # Race Recognition
+        self.race_recognition_subnet = RaceRecognitionSubnet()
+        
+        # Feature Fusion
+        self.feature_fusion_module = MultiScaleFusion(transformer_embedding_dim=self.transformer_embedding_dim)
 
     def forward(self, x):
         
         multiscale_features = self.backbone(x)
+        fused_features = self.feature_fusion_module(multiscale_features)
         
         # Face recognition
         normalized_embedding, embedding_norm = self.face_recognition_embedding_subnet(multiscale_features)
         
         # Emotion Recognition
-        emotion_output = self.emotion_recognition_subnet(multiscale_features)
+        emotion_output = self.emotion_recognition_subnet(fused_features)
         
         # Age Estimation
-        age_output = self.age_estimation_subnet(multiscale_features)
+        age_output = self.age_estimation_subnet(fused_features)
         
         # Gender Recognition
-        gender_output = self.gender_recognition_subnet(multiscale_features)
+        gender_output = self.gender_recognition_subnet(fused_features)
 
         # Race Recognition
-        race_output = self.race_recognition_subnet(multiscale_features)
+        race_output = self.race_recognition_subnet(fused_features)
         
         return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output
 

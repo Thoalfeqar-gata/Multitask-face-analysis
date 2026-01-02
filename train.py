@@ -155,10 +155,12 @@ def main(**kwargs):
     backbone_params_count = 0
     face_rec_subnet_parameters_count = 0
     margin_head_params_count = 0
+    multiscale_fusion_params_count = 0
     emotion_rec_subnet_parameters_count = 0
     age_estimation_subnet_parameters_count = 0
     gender_rec_subnet_parameters_count = 0
     race_rec_subnet_parameters_count = 0
+    
     for name, param in model.named_parameters():
         if 'backbone' in name:
             backbone_params.append(param)
@@ -171,6 +173,10 @@ def main(**kwargs):
         elif 'margin_head' in name:
             margin_head_params.append(param)
             margin_head_params_count += param.numel()
+            
+        elif 'feature_fusion_module' in name:
+            multiscale_fusion_params_count += param.numel()
+            other_params.append(param)
 
         elif 'emotion_recognition_subnet' in name:
             other_params.append(param)
@@ -196,6 +202,7 @@ def main(**kwargs):
     print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
     print(f'Face recognition subnet parameters: {face_rec_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Margin head parameters:  {margin_head_params_count} <'.ljust(50, '='))
+    print(f'Feature Fusion parameters: {multiscale_fusion_params_count}<'.ljust(50, '='))
     print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(50, '='))
@@ -453,6 +460,7 @@ def main(**kwargs):
 
         # Validation
         if use_validation:
+            model.eval()
             print(' Validating '.center(100, '='))
             
             # Face Recognition
