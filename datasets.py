@@ -91,7 +91,8 @@ class BaseDatasetClass(torch.utils.data.Dataset):
             'emotion' : -1,
             'age' : -1,
             'gender' : -1,
-            'race' : -1
+            'race' : -1,
+            'attributes' : np.ones(40) * -1, # place -1 for all the 40 attributes
         }
         if self.return_name:
             label['dataset_name'] = self.__class__.__name__
@@ -339,3 +340,34 @@ class FairFace(BaseDatasetClass):
         label['race'] = race
 
         return image, label 
+    
+
+###################################
+
+#       Attribute recognition
+
+###################################
+
+class CelebA(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'attribute recognition', 'CelebA'), transform = None, subset = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
+        if subset != None: # Can be 'train', 'test', or 'validation'
+            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+            self.labels_df.reset_index(drop = True, inplace = True)
+
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = self.get_default_labels()
+        label['attributes'] = np.array(self.labels_df.iloc[idx, 1:-1].values, dtype = np.int32)
+
+        return image, label
+
+
+
+

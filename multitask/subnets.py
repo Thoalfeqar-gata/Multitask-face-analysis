@@ -20,7 +20,7 @@ class FaceRecognitionEmbeddingSubnet(nn.Module):
         self.norm_layer = nn.LayerNorm(feature_embedding_dim)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.feature_head = nn.Sequential(
-            nn.Linear(in_features = feature_embedding_dim, out_features=feature_embedding_dim, bias = False),
+            nn.Linear(in_features = feature_embedding_dim, out_features=feature_embedding_dim, bias = False), # bias = False since it is followed by a BatchNorm1d, which removes the bias
             nn.BatchNorm1d(num_features = feature_embedding_dim, eps = 2e-5),
             nn.Linear(in_features = feature_embedding_dim, out_features = embedding_dim, bias = False),
             nn.BatchNorm1d(num_features = embedding_dim, eps = 2e-5)
@@ -48,7 +48,7 @@ class AgeEstimationSubnet(nn.Module):
         self.head = nn.Sequential( # A simple distribution prediction head
             nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 ->1x1x512
             nn.Flatten(), # 1x1x512 -> 512
-            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.Linear(in_features = 512, out_features = 256, bias = False),
             nn.BatchNorm1d(num_features = 256, eps = 2e-5),
             nn.ReLU(inplace = True),
             nn.Dropout(0.2),
@@ -68,7 +68,7 @@ class GenderRecognitionSubnet(nn.Module):
         self.head = nn.Sequential( # A simple binary classification head
             nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
-            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.Linear(in_features = 512, out_features = 256, bias = False),
             nn.BatchNorm1d(num_features = 256, eps = 2e-5),
             nn.ReLU(inplace = True),
             nn.Dropout(0.2),
@@ -89,7 +89,7 @@ class EmotionRecognitionSubnet(nn.Module):
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
-            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.Linear(in_features = 512, out_features = 256, bias = False),
             nn.BatchNorm1d(num_features = 256, eps = 2e-5),
             nn.ReLU(inplace = True),
             nn.Dropout(0.2),
@@ -108,7 +108,26 @@ class RaceRecognitionSubnet(nn.Module):
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
-            nn.Linear(in_features = 512, out_features = 256, bias = True),
+            nn.Linear(in_features = 512, out_features = 256, bias = False),
+            nn.BatchNorm1d(num_features = 256, eps = 2e-5),
+            nn.ReLU(inplace = True),
+            nn.Dropout(0.2),
+            nn.Linear(in_features = 256, out_features = num_classes, bias = True),
+        )
+    
+    def forward(self, fused_features):
+        x = self.cbam(fused_features)
+        return self.head(x)
+
+
+class AttributeRecognitionSubnet(nn.Module):
+    def __init__(self, num_classes = 40):
+        super(AttributeRecognitionSubnet, self).__init__()
+        self.cbam = CBAM(channels = 512)
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.Flatten(), # 1x1x512 -> 512
+            nn.Linear(in_features = 512, out_features = 256, bias = False),
             nn.BatchNorm1d(num_features = 256, eps = 2e-5),
             nn.ReLU(inplace = True),
             nn.Dropout(0.2),
