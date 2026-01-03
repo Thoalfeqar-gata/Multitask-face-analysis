@@ -137,3 +137,5 @@ class AttributeRecognitionSubnet(nn.Module):
     def forward(self, fused_features):
         x = self.cbam(fused_features)
         return self.head(x)
+
+

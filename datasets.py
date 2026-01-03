@@ -86,13 +86,14 @@ class BaseDatasetClass(torch.utils.data.Dataset):
 
     # used for getting the default labels for each task and, optionally, the name of the database
     def get_default_labels(self):
-        label = {
+        label = { # the default label is -1 because putting someting like None won't work in the torch.utils.data.DataLoader, and using something like float('nan') won't work with integer labels.
             'face_recognition' : -1,
             'emotion' : -1,
             'age' : -1,
             'gender' : -1,
             'race' : -1,
-            'attributes' : np.ones(40) * -1, # place -1 for all the 40 attributes
+            'attributes' : torch.ones(40, dtype = torch.int32) * -1, # place -1 for all the 40 attributes
+            'pose' : torch.ones(3, dtype = torch.float32) * -999, # place -999 for all the 3 angles. We can't place -1 because it could be a valid angle.
         }
         if self.return_name:
             label['dataset_name'] = self.__class__.__name__
@@ -364,10 +365,34 @@ class CelebA(BaseDatasetClass):
             image = self.transform(image)
 
         label = self.get_default_labels()
-        label['attributes'] = np.array(self.labels_df.iloc[idx, 1:-1].values, dtype = np.int32)
+        label['attributes'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:-1].values, dtype = np.int8), dtype = torch.int8)
 
         return image, label
 
+
+
+###################################
+
+#       Attribute recognition
+
+###################################
+
+class W300LP(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'head pose estimation', 'W300LP'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = self.get_default_labels()
+        label['pose'] = torch.tensor(self.labels_df.iloc[idx, 1:].values, dtype = torch.float32)
+
+
+        return image, label
 
 
 
