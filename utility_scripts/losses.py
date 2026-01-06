@@ -1,15 +1,15 @@
 import scipy
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
+#################################################
 
-##################################
+#   Age Estimation deep label distribution loss
 
-#   Age Estimation Utilities
-
-##################################
+#################################################
 
 def label_to_gaussian(label, min_age, max_age, sigma):
 
@@ -50,25 +50,25 @@ def dldl_loss(logits, target, min_age=0, max_age=101, sigma=2.0, l1_weight=1.0):
     return loss_kl + (l1_weight * loss_l1)
 
 
+#################################################
 
-##################################
+#   Pose estimation geodesic loss
 
-#   Pose Estimation Utilities
+#################################################
 
-##################################
+#matrices batch*3*3
+#both matrix are orthogonal rotation matrices
+#out theta between 0 to 180 degree batch
+class GeodesicLoss(nn.Module):
+    def __init__(self, eps=1e-7):
+        super().__init__()
+        self.eps = eps
 
-def mat_to_rotation_matrix(mat_file: str):
-    """
-    (Incomplete) Intended to extract a rotation matrix from a .mat file.
-
-    Args:
-        mat_file (str): Path to the .mat file.
-
-    Returns:
-        str: A placeholder string.
-    """
-    # TODO: Implement the logic to extract and return the actual rotation matrix.
-    content = scipy.io.loadmat(mat_file)
-    print(content)
-
-    return "Cookie!"
+    def forward(self, m1, m2):
+        m = torch.bmm(m1, m2.transpose(1,2)) #batch*3*3
+        
+        trace = (m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2])
+        cos = (trace - 1) / 2
+        theta_loss = torch.acos(torch.clamp(cos, -1+self.eps, 1-self.eps))
+         
+        return torch.mean(theta_loss)
