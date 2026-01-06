@@ -23,13 +23,13 @@ class SAM(nn.Module):
         return x * mask 
 
 class CAM(nn.Module):
-    def __init__(self, channels, r):
+    def __init__(self, channels, reduction):
         super(CAM, self).__init__()
         
         self.mlp = nn.Sequential(
-            nn.Conv2d(channels, channels // r, kernel_size=1, bias=False),
+            nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=False),
             nn.SiLU(inplace=True), # SiLU Is smoother than ReLU
-            nn.Conv2d(channels // r, channels, kernel_size=1, bias=False)
+            nn.Conv2d(channels // reduction, channels, kernel_size=1, bias=False)
         )
 
     def forward(self, x):
@@ -46,9 +46,9 @@ class CAM(nn.Module):
         return x * mask
     
 class CBAM(nn.Module):
-    def __init__(self, channels, r=8, skip_connection = True):
+    def __init__(self, channels, reduction=8, skip_connection = True):
         super(CBAM, self).__init__()
-        self.cam = CAM(channels=channels, r=r)
+        self.cam = CAM(channels=channels, reduction=reduction)
         self.sam = SAM(bias=False)
         self.skip_connection = skip_connection
 

@@ -54,7 +54,7 @@ class MultiScaleFusion(nn.Module):
         
         # stage_3
         self.conv41 = nn.Conv2d(in_channels = transformer_embedding_dim * 8, out_channels = stage_out_channels[3],
-                                kernel_size = 3, stride = 1, padding = 1) # 7 x 7 x transformer_embedding_dim * 8 -> 7 x 7 x stage_out_channels[2]
+                                kernel_size = 3, stride = 1, padding = 1) # 7 x 7 x transformer_embedding_dim * 8 -> 7 x 7 x stage_out_channels[3]
         
 
         self.cbam = CBAM(channels = 512, reduction = 4, skip_connection=True)

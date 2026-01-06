@@ -59,16 +59,10 @@ def dldl_loss(logits, target, min_age=0, max_age=101, sigma=2.0, l1_weight=1.0):
 #matrices batch*3*3
 #both matrix are orthogonal rotation matrices
 #out theta between 0 to 180 degree batch
-class GeodesicLoss(nn.Module):
-    def __init__(self, eps=1e-7):
-        super().__init__()
-        self.eps = eps
+def geodesic_loss(m1, m2, eps = 1e-6):
+    m = torch.bmm(m1, m2.transpose(1,2)) #batch*3*3
 
-    def forward(self, m1, m2):
-        m = torch.bmm(m1, m2.transpose(1,2)) #batch*3*3
-        
-        trace = (m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2])
-        cos = (trace - 1) / 2
-        theta_loss = torch.acos(torch.clamp(cos, -1+self.eps, 1-self.eps))
-         
-        return torch.mean(theta_loss)
+    trace = (m[:, 0, 0], m[:, 1, 1], m[:, 2, 2])
+    cos = (trace - 1) / 2
+    theta_loss = torch.acos(torch.clamp(cos, -1 + eps, 1 - eps))
+    return torch.mean(theta_loss)

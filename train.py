@@ -11,15 +11,13 @@ from torch.utils.data import DataLoader, WeightedRandomSampler, ConcatDataset
 from torchvision.transforms import v2
 from torch.optim import lr_scheduler
 from augmenter import Augmenter
-from multitask.subnets import FaceRecognitionEmbeddingSubnet, GenderRecognitionSubnet, AgeEstimationSubnet, \
-                              EmotionRecognitionSubnet, RaceRecognitionSubnet
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from multitask.models import MultiTaskFaceAnalysisModel
+from multitask.framework1.smart import MultiTaskFaceAnalysisModel
 from configs.train_multitask_davit_s_ms1mv2_face_age_gender_race_emotion_attribute import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
-from utility_scripts.utility_functions import dldl_loss
+from utility_scripts.losses import dldl_loss, geodesic_loss
 
 torch.set_float32_matmul_precision('medium')
 
@@ -155,7 +153,6 @@ def main(**kwargs):
     backbone_params_count = 0
     face_rec_subnet_parameters_count = 0
     margin_head_params_count = 0
-    multiscale_fusion_params_count = 0
     emotion_rec_subnet_parameters_count = 0
     age_estimation_subnet_parameters_count = 0
     gender_rec_subnet_parameters_count = 0
@@ -173,10 +170,6 @@ def main(**kwargs):
         elif 'margin_head' in name:
             margin_head_params.append(param)
             margin_head_params_count += param.numel()
-            
-        elif 'feature_fusion_module' in name:
-            multiscale_fusion_params_count += param.numel()
-            other_params.append(param)
 
         elif 'emotion_recognition_subnet' in name:
             other_params.append(param)
@@ -202,11 +195,16 @@ def main(**kwargs):
     print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
     print(f'Face recognition subnet parameters: {face_rec_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Margin head parameters:  {margin_head_params_count} <'.ljust(50, '='))
-    print(f'Feature Fusion parameters: {multiscale_fusion_params_count}<'.ljust(50, '='))
     print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(50, '='))
     print(f'Race recognition subnet parameters: {race_rec_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Total (excluding the margin head parameters): {backbone_params_count + 
+                    face_rec_subnet_parameters_count + 
+                    emotion_rec_subnet_parameters_count + 
+                    age_estimation_subnet_parameters_count + 
+                    gender_rec_subnet_parameters_count + 
+                    race_rec_subnet_parameters_count}')
 
     # Create parameter groups with different learning rates
     param_groups = [
