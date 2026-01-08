@@ -378,7 +378,7 @@ class CelebA(BaseDatasetClass):
 ###################################
 
 class W300LP(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'head pose estimation', 'W300LP'), transform = None, **kwargs):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'head pose estimation', '300W_LP'), transform = None, **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
     
     def __getitem__(self, idx):
@@ -389,10 +389,26 @@ class W300LP(BaseDatasetClass):
             image = self.transform(image)
 
         label = self.get_default_labels()
-        label['pose'] = torch.tensor(self.labels_df.iloc[idx, 1:].values, dtype = torch.float32)
+        label['pose'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:].values, dtype = np.float32), dtype = torch.float32)
 
 
         return image, label
 
+
+class BIWI(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'head pose estimation', 'BIWI'), transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode=torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = self.get_default_labels()
+        label['pose'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:].values, dtype = np.float32), dtype = torch.float32)
+
+        return image, label
 
 
