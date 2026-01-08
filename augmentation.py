@@ -11,20 +11,6 @@ from torchvision import transforms
 
 def get_task_augmentation_transforms():
 
-    common_transform = v2.Compose([
-        v2.ToPILImage(),
-        v2.RandomHorizontalFlip(p = 0.5),
-        v2.RandomAffine(degrees = 15, translate = (0.1, 0.1), scale = (0.9, 1.1)),
-        v2.RandomGrayscale(p = 0.1),
-        v2.RandomApply([v2.GaussianBlur(kernel_size = 3, sigma = (0.1, 2))], p = 0.1),
-        v2.RandomApply([v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)], p = 0.1),
-        RandomGamma(min_gamma=0.5, max_gamma=1.5, p=0.1),
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale = True),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
-
-
     face_recognition_transform = v2.Compose([ 
         v2.ToPILImage(),
         Augmenter(crop_augmentation_prob=0.2, low_res_augmentation_prob=0.2, photometric_augmentation_prob=0.2),
@@ -57,11 +43,37 @@ def get_task_augmentation_transforms():
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
+    emotion_recognition_transform = v2.Compose([ 
+        v2.ToPILImage(),
+        v2.RandomHorizontalFlip(p = 0.5),
+        v2.RandomAffine(degrees = 15, translate = (0.1, 0.1), scale = (0.9, 1.1)),
+        v2.RandomGrayscale(p = 0.1),
+        v2.RandomApply([v2.GaussianBlur(kernel_size = 3, sigma = (0.1, 2))], p = 0.1),
+        v2.RandomApply([v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)], p = 0.1),
+        RandomGamma(min_gamma=0.5, max_gamma=1.5, p=0.1),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
+
+    attribute_recognition_transform = v2.Compose([
+        v2.ToPILImage(),
+        v2.RandomHorizontalFlip(p = 0.5),
+        v2.RandomAffine(degrees = 10, padding_mode = 'reflection'),
+        v2.RandomGrayscale(p = 0.1),
+        v2.RandomApply([v2.GaussianBlur(kernel_size = 3, sigma = (0.1, 2))], p = 0.1),
+        v2.RandomApply([v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)], p = 0.1),
+        RandomGamma(min_gamma=0.5, max_gamma=1.5, p=0.1),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale = True),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
+
     return {
         'face_recognition': face_recognition_transform,
-        'emotion_recognition': common_transform,
+        'emotion_recognition': emotion_recognition_transform,
         'age_gender_race_recognition': age_gender_race_recognition,
-        'attribute_recognition': common_transform,
+        'attribute_recognition': attribute_recognition_transform,
         'head_pose_estimation': head_pose_estimation
     }
 

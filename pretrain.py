@@ -14,7 +14,7 @@ from lightning.pytorch import loggers
 from augmentation import Augmenter
 from configs.train_davit_s_ms1mv2_adaface import config # change the config to change the script's behaviour
 
-from multitask.subnets import FaceRecognitionEmbeddingSubnet
+from multitask.framework1.standard import FaceRecognitionEmbeddingSubnet
 
 torch.set_float32_matmul_precision('medium')
 
