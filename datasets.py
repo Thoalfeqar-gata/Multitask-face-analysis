@@ -57,7 +57,7 @@ def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None)
         unified_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
-        sampler=sampler, 
+        sampler=sampler,
         pin_memory=True
     )
     
@@ -235,6 +235,24 @@ class EmotionRecognitionClass(BaseDatasetClass):
         label['emotion'] = self.labels_df['label'][idx]
 
         return image, label
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample in this dataset such that it balances the classes.
+            Classes with low samples get a higher weight.
+            The final weight must sum to 1.
+        """
+
+        label_counts = self.labels_df['label'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['label'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
+
+
+
+
+
+
 
 class AffectNet(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), subset = 'train', transform = None, **kwargs):
