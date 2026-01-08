@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
-from augmenter import Augmenter
+from augmentation import Augmenter
 from configs.train_davit_s_ms1mv2_adaface import config # change the config to change the script's behaviour
 
 from multitask.subnets import FaceRecognitionEmbeddingSubnet

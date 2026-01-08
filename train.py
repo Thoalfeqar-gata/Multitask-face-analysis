@@ -10,7 +10,7 @@ from torchsummary import summary
 from torch.utils.data import DataLoader, WeightedRandomSampler, ConcatDataset
 from torchvision.transforms import v2
 from torch.optim import lr_scheduler
-from augmenter import Augmenter
+from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.framework1.smart import MultiTaskFaceAnalysisModel
@@ -31,27 +31,12 @@ def main(**kwargs):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # train and test transforms
-    train_face_rec_transform = v2.Compose([ # for face recognition during training.
-        v2.ToPILImage(),
-        Augmenter(crop_augmentation_prob=0.2, low_res_augmentation_prob=0.2, photometric_augmentation_prob=0.2),
-        v2.RandomHorizontalFlip(),
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale = True),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
-
-    train_transform = v2.Compose([ # for other datasets during training.
-        v2.ToPILImage(),
-        v2.RandomHorizontalFlip(),
-        v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-        v2.RandomGrayscale(p=0.1),
-        v2.RandomApply([v2.GaussianBlur(kernel_size=3, sigma=(0.1, 2))], p=0.1),
-        v2.RandomErasing(p=0.2, scale=(0.02, 0.1)),
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale = True),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+    transforms = get_task_augmentation_transforms()
+    
+    train_face_rec_transform = transforms['face_recognition']
+    emotion_recognition_transform = transforms['emotion_recognition']
+    age_gender_race_transform = transforms['age_gender_race_recognition']
+    
 
     test_transform = v2.Compose([ # for testing on datasets other than face recognition.
         v2.ToImage(),
@@ -65,10 +50,10 @@ def main(**kwargs):
     ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
     num_classes = ms1mv2.number_of_classes()
     
-    affectnet_train = db.AffectNet(transform = train_transform, subset = 'train', return_name = return_name) 
-    rafdb_train = db.RAFDB(transform = train_transform, subset = 'train', return_name = return_name)
-    labels_affectnet, counts_affectnet = np.unique(affectnet_train.labels_df['label'], return_counts = True)
-    labels_rafdb, counts_rafdb = np.unique(rafdb_train.labels_df['label'], return_counts = True)
+    affectnet_train = db.AffectNet(transform = emotion_recognition_transform, subset = 'train', return_name = return_name) 
+    rafdb_train = db.RAFDB(transform = emotion_recognition_transform, subset = 'train', return_name = return_name)
+    _, counts_affectnet = np.unique(affectnet_train.labels_df['label'], return_counts = True)
+    _, counts_rafdb = np.unique(rafdb_train.labels_df['label'], return_counts = True)
     total_counts = counts_affectnet + counts_rafdb
     total_samples = total_counts.sum()
     num_emotion_classes = len(total_counts)
@@ -82,9 +67,9 @@ def main(**kwargs):
         affectnet_train,
         rafdb_train,
         # Age, Gender, and Race
-        db.FairFace(transform = train_transform, subset = 'train', return_name = return_name), # gender and race
-        db.UTKFace(transform = train_transform, subset = 'train', return_name = return_name), # age, gender, race
-        db.MORPH(transform = train_transform, subset = 'train', return_name = return_name) # age, gender
+        db.FairFace(transform = age_gender_race_transform, subset = 'train', return_name = return_name), # gender and race
+        db.UTKFace(transform = age_gender_race_transform, subset = 'train', return_name = return_name), # age, gender, race
+        db.MORPH(transform = age_gender_race_transform, subset = 'train', return_name = return_name) # age, gender
     ]    
     
     batch_size = kwargs.get('batch_size')
