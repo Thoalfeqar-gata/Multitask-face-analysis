@@ -9,19 +9,14 @@ from torchvision.io import decode_image
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 
-def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None):
+def get_balanced_loader(datasets_dict: dict[str, torch.utils.data.Dataset], batch_size: int, num_workers: int, epoch_size: int = None):
     """
 
-    Each dataset will get an equal probability of being chosen. 
-    The probability of choosing a single dataset will be distributed equally
-    among the samples of that dataset. This equal probability will then be multiplied
-    by the sample weightes defined by the get_sample_weights method within the dataset.
-    This ensures that each dataset gets a fair chance of being sampled, while also 
-    keeping the sample balancing defined by each dataset. 
+    This function returns a dataloader such that each task will have an equal probability of being chosen. 
 
     Args:
-        datasets_list (list): A list of the datasets to be combined and turned into a dataloader.
-                              Each dataset must has a get_sample_weight method defined.
+        datasets (dict): A dictionary of datasets for each task. 
+                              Each dataset must have a get_sample_weight method defined.
         batch_size (int): How many samples per batch to load.
         num_workers (int): How many subprocesses to use for data loading.
         epoch_size (int): How many images to sample per epoch. 
@@ -29,20 +24,26 @@ def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None)
     Returns:
         dataloader (torch.utils.data.DataLoader): A dataloader with balanced loading of the datasets.                          
     """
-    # 1. Concatenate the datasets
-    unified_dataset = ConcatDataset(datasets_list)
+    # 1. get the sample weights per task and concatenate the datasets of each task.
+    task_weight = 1 / len(datasets_dict) # assign equal weight for each task.
+    task_sample_weights = [] # accumulate sample weights per task here.
+    task_datasets = [] # accumulate concatenated datasets per task here.
+    for task_name in datasets_dict.keys():
+        if len(datasets_dict[task_name]) == 1: # for tasks with one datasets
+            task_datasets.append(datasets_dict[task_name][0])
+            task_sample_weights.append(datasets_dict[task_name][0].get_sample_weights() * task_weight)
+        else: # for tasks with more than one dataset
+            task_datasets.append(ConcatDataset(datasets_dict[task_name])) # concatenate the task's datasets and add them
+            
+            # concatenate the sample weights of each dataset within this task, then multiply by the task_weight / the number of datasets in this task 
+            task_sample_weights.append(np.concatenate([dataset.get_sample_weights() for dataset in datasets_dict[task_name]]) \
+                                             * (task_weight / len(datasets_dict[task_name]))) # distribute the task weight equally among the datasets of this task.
 
 
-    # 2. Accumulate the sample weights defined by each dataset and multiply by the probability assigned for each dataset. 
-    # This probability is equal for each dataset.
-    dataset_prob = 1 / len(datasets_list)
-    sample_weights = []
-    for dataset in datasets_list:
-        sample_weights.extend(dataset_prob * dataset.get_sample_weights())
-    sample_weights = np.array(sample_weights)
-    sample_weights = torch.from_numpy(sample_weights)
-
-
+    # 2. concatenate the datasets of each task and the sample weights
+    unified_dataset = ConcatDataset(task_datasets)
+    sample_weights = np.concatenate(list(task_sample_weights))
+    
     # 3. Define Epoch Size
     # If we don't set this, an 'epoch' is just the sum of all raw lengths (~6.5M)
     # But we likely want to define a 'Virtual Epoch' to check validation often.
@@ -66,7 +67,7 @@ def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None)
         pin_memory=True
     )
     
-    return loader, sample_weights
+    return loader
 
 
 
@@ -466,24 +467,24 @@ class CelebA(BaseDatasetClass):
         return sample_weights / sample_weights.sum()
     
 
-def get_attribute_weights(self):
-        """
-        Returns the pos_weight for BCEWithLogitsLoss.
-        Formula: Negative_Count / Positive_Count
-        """
-        # 1. Count positives. Replace -1 with 0 for the negative.
-        labels = self.labels_df.iloc[:, 1:-1].replace(-1, 0)
-        
-        pos_counts = labels.sum()
-        total_counts = len(self.labels_df)
-        neg_counts = total_counts - pos_counts
-        
-        # 2. Calculate Ratio (Neg / Pos)
-        # Add epsilon to avoid division by zero
-        pos_weights = neg_counts / (pos_counts + 1e-6)
-        
-        # Return as tensor
-        return torch.tensor(pos_weights.values, dtype=torch.float32)
+    def get_attribute_weights(self):
+            """
+            Returns the pos_weight for BCEWithLogitsLoss.
+            Formula: Negative_Count / Positive_Count
+            """
+            # 1. Count positives. Replace -1 with 0 for the negative.
+            labels = self.labels_df.iloc[:, 1:-1].replace(-1, 0)
+            
+            pos_counts = labels.sum()
+            total_counts = len(self.labels_df)
+            neg_counts = total_counts - pos_counts
+            
+            # 2. Calculate Ratio (Neg / Pos)
+            # Add epsilon to avoid division by zero
+            pos_weights = neg_counts / (pos_counts + 1e-6)
+            
+            # Return as tensor
+            return torch.tensor(pos_weights.values, dtype=torch.float32)
 
 
 
