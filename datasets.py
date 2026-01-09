@@ -11,47 +11,52 @@ from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None):
     """
+
+    Each dataset will get an equal probability of being chosen. 
+    The probability of choosing a single dataset will be distributed equally
+    among the samples of that dataset. This equal probability will then be multiplied
+    by the sample weightes defined by the get_sample_weights method within the dataset.
+    This ensures that each dataset gets a fair chance of being sampled, while also 
+    keeping the sample balancing defined by each dataset. 
+
     Args:
         datasets_list (list): A list of the datasets to be combined and turned into a dataloader.
+                              Each dataset must has a get_sample_weight method defined.
+        batch_size (int): How many samples per batch to load.
+        num_workers (int): How many subprocesses to use for data loading.
         epoch_size (int): How many images to sample per epoch. 
-                          
+    
+    Returns:
+        dataloader (torch.utils.data.DataLoader): A dataloader with balanced loading of the datasets.                          
     """
-    # 1. Concatenate naturally (NO repetition)
+    # 1. Concatenate the datasets
     unified_dataset = ConcatDataset(datasets_list)
-    
-    # 2. Calculate weights for each dataset
-    dataset_counts = [len(ds) for ds in datasets_list]
-    total_count = sum(dataset_counts)
-    
-    # Calculate weight per sample: 1.0 / count
-    # This ensures that (count * weight) is constant for all datasets
-    dataset_weights = [1.0 / count for count in dataset_counts]
-    
-    print("Dataset weights:", dataset_weights)
-    
-    # 3. Assign a weight to EVERY sample in the unified dataset
-    # This creates a long vector of weights matching the unified_dataset length
+
+
+    # 2. Accumulate the sample weights defined by each dataset and multiply by the probability assigned for each dataset. 
+    # This probability is equal for each dataset.
+    dataset_prob = 1 / len(datasets_list)
     sample_weights = []
-    for i, count in enumerate(dataset_counts):
-        # Extend the list by the number of items in that dataset
-        sample_weights.extend([dataset_weights[i]] * count)
-        
-    sample_weights = torch.DoubleTensor(sample_weights)
-    
-    # 4. Define Epoch Size
+    for dataset in datasets_list:
+        sample_weights.extend(dataset_prob * dataset.get_sample_weights())
+    sample_weights = np.array(sample_weights)
+    sample_weights = torch.from_numpy(sample_weights)
+
+
+    # 3. Define Epoch Size
     # If we don't set this, an 'epoch' is just the sum of all raw lengths (~6.5M)
     # But we likely want to define a 'Virtual Epoch' to check validation often.
     if epoch_size is None:
         epoch_size = len(unified_dataset)
         
-    # 5. Create the Sampler
+    # 4. Create the Sampler
     sampler = WeightedRandomSampler(
         weights=sample_weights,
         num_samples=epoch_size,
         replacement=True # Crucial: Allows picking samples multiple times
     )
     
-    # 6. Create Loader
+    # 5. Create Loader
     # Note: shuffle must be False when using a sampler! It already shuffles everything nicely.
     loader = DataLoader(
         unified_dataset,
@@ -61,7 +66,7 @@ def get_balanced_loader(datasets_list, batch_size, num_workers, epoch_size=None)
         pin_memory=True
     )
     
-    return loader
+    return loader, sample_weights
 
 
 
@@ -79,6 +84,9 @@ class BaseDatasetClass(torch.utils.data.Dataset):
         self.return_name = return_name
 
     def __getitem__(self, idx):
+        raise NotImplementedError
+    
+    def get_sample_weights(self):
         raise NotImplementedError
     
     def __len__(self):
@@ -130,6 +138,14 @@ class FaceRecognitionClass(BaseDatasetClass):
         label['face_recognition'] = self.labels_df['label'][idx]
 
         return image, label
+
+    def get_sample_weights(self):
+        """
+            Face recognition datasets will not be balanced.
+            This method returns an equal weight for each sample to be combined in the get_balanced_loader method.
+        """
+        sample_weights = np.ones(len(self.labels_df))
+        return sample_weights / sample_weights.sum()
 
 class Glint360k(FaceRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'face recognition', 'glint360k'), transform = None, **kwargs):
@@ -441,20 +457,39 @@ class CelebA(BaseDatasetClass):
 
         return image, label
     
-    def get_attribute_weights(self):
+    def get_sample_weights(self):
         """
-            Returns the weight of each attribute to be used in the loss function.
-            The final weight must sum to 1.
+            Balancing this dataset is handled using the loss function.
+            This method returns an equal weight for each sample to be combined in the get_balanced_loader method.
         """
-        label_counts = self.labels_df.iloc[:, 1:-1].replace(-1, 0).sum()
-        class_weights = len(self.labels_df) / label_counts
-        return class_weights / class_weights.sum()
+        sample_weights = np.ones(len(self.labels_df))
+        return sample_weights / sample_weights.sum()
+    
+
+def get_attribute_weights(self):
+        """
+        Returns the pos_weight for BCEWithLogitsLoss.
+        Formula: Negative_Count / Positive_Count
+        """
+        # 1. Count positives. Replace -1 with 0 for the negative.
+        labels = self.labels_df.iloc[:, 1:-1].replace(-1, 0)
+        
+        pos_counts = labels.sum()
+        total_counts = len(self.labels_df)
+        neg_counts = total_counts - pos_counts
+        
+        # 2. Calculate Ratio (Neg / Pos)
+        # Add epsilon to avoid division by zero
+        pos_weights = neg_counts / (pos_counts + 1e-6)
+        
+        # Return as tensor
+        return torch.tensor(pos_weights.values, dtype=torch.float32)
 
 
 
 ###################################
 
-#       Attribute recognition
+#       Head Pose Estimation
 
 ###################################
 
@@ -474,6 +509,14 @@ class W300LP(BaseDatasetClass):
 
 
         return image, label
+    
+    def get_sample_weights(self):
+        """
+            This dataset will not be balanced since it represents a continuous range of angles for the head pose.
+            This method returns an equal weight for each sample to be combined in the get_balanced_loader method.
+        """
+        sample_weights = np.ones(len(self.labels_df))
+        return sample_weights / sample_weights.sum()
 
 
 class BIWI(BaseDatasetClass):
@@ -491,5 +534,13 @@ class BIWI(BaseDatasetClass):
         label['pose'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:].values, dtype = np.float32), dtype = torch.float32)
 
         return image, label
+    
+    def get_sample_weights(self):
+        """
+            This dataset will not be balanced since it represents a continuous range of angles for the head pose.
+            This method returns an equal weight for each sample to be combined in the get_balanced_loader method.
+        """
+        sample_weights = np.ones(len(self.labels_df))
+        return sample_weights / sample_weights.sum()
 
 
