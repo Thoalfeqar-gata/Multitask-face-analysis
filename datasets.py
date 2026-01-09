@@ -249,11 +249,6 @@ class EmotionRecognitionClass(BaseDatasetClass):
         return sample_weights / sample_weights.sum()
 
 
-
-
-
-
-
 class AffectNet(EmotionRecognitionClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), subset = 'train', transform = None, **kwargs):
         super().__init__(dataset_dir, subset = subset, transform = transform, **kwargs)
@@ -288,6 +283,19 @@ class AgeDB(BaseDatasetClass):
         label['gender'] = gender
 
         return image, label
+    
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample such that it balances the males and females.
+            The final weight must sum to 1.
+        """
+
+        label_counts = self.labels_df['gender'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['gender'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
+
+
 
 class MORPH(BaseDatasetClass):
     def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'train', **kwargs):
@@ -310,6 +318,17 @@ class MORPH(BaseDatasetClass):
         label['gender'] = gender
 
         return image, label
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample such that it balances the males and females.
+            The final weight must sum to 1.
+        """
+
+        label_counts = self.labels_df['gender'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['gender'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
 
 
 class UTKFace(BaseDatasetClass):
@@ -335,6 +354,24 @@ class UTKFace(BaseDatasetClass):
         label['race'] = race
 
         return image, label
+    
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample such that it balanced both the race and the gender.
+            The final weight must sum to 1.
+        """
+
+        gender_label_counts = self.labels_df['gender'].value_counts().sort_index()
+        gender_class_weights = len(self.labels_df) / gender_label_counts
+        gender_sample_weights = self.labels_df['gender'].map(gender_class_weights).to_numpy()
+
+        race_label_counts = self.labels_df['race'].value_counts().sort_index()
+        race_class_weights = len(self.labels_df) / race_label_counts
+        race_sample_weights = self.labels_df['race'].map(race_class_weights).to_numpy()
+
+        sample_weights = gender_sample_weights * race_sample_weights
+        return sample_weights / sample_weights.sum()
+
 
 
 
@@ -359,6 +396,23 @@ class FairFace(BaseDatasetClass):
         label['race'] = race
 
         return image, label 
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample such that it balanced both the race and the gender.
+            The final weight must sum to 1.
+        """
+
+        gender_label_counts = self.labels_df['gender'].value_counts().sort_index()
+        gender_class_weights = len(self.labels_df) / gender_label_counts
+        gender_sample_weights = self.labels_df['gender'].map(gender_class_weights).to_numpy()
+
+        race_label_counts = self.labels_df['race'].value_counts().sort_index()
+        race_class_weights = len(self.labels_df) / race_label_counts
+        race_sample_weights = self.labels_df['race'].map(race_class_weights).to_numpy()
+
+        sample_weights = gender_sample_weights * race_sample_weights
+        return sample_weights / sample_weights.sum()
     
 
 ###################################
@@ -386,6 +440,15 @@ class CelebA(BaseDatasetClass):
         label['attributes'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:-1].values, dtype = np.int8), dtype = torch.int8)
 
         return image, label
+    
+    def get_attribute_weights(self):
+        """
+            Returns the weight of each attribute to be used in the loss function.
+            The final weight must sum to 1.
+        """
+        label_counts = self.labels_df.iloc[:, 1:-1].replace(-1, 0).sum()
+        class_weights = len(self.labels_df) / label_counts
+        return class_weights / class_weights.sum()
 
 
 
