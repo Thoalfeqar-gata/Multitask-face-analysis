@@ -45,7 +45,7 @@ def get_balanced_loader(datasets_dict: dict[str, torch.utils.data.Dataset], batc
     sample_weights = np.concatenate(list(task_sample_weights))
     
     # 3. Define Epoch Size
-    # If we don't set this, an 'epoch' is just the sum of all raw lengths (~6.5M)
+    # If we don't set this, an 'epoch' is just the sum of all raw lengths
     # But we likely want to define a 'Virtual Epoch' to check validation often.
     if epoch_size is None:
         epoch_size = len(unified_dataset)
@@ -454,7 +454,10 @@ class CelebA(BaseDatasetClass):
             image = self.transform(image)
 
         label = self.get_default_labels()
-        label['attributes'] = torch.tensor(np.array(self.labels_df.iloc[idx, 1:-1].values, dtype = np.int8), dtype = torch.int8)
+
+        # Convert -1 to 0
+        raw_attrs = self.labels_df.iloc[idx, 1:-1].values
+        label['attributes'] = torch.tensor((raw_attrs > 0).astype(np.uint8), dtype=torch.uint8)
 
         return image, label
     

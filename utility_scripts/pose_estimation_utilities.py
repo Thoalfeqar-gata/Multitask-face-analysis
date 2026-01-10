@@ -16,11 +16,11 @@ def compute_rotation_matrix_from_ortho6d(ortho6d):
     x = F.normalize(x_raw, dim=-1, eps = 1e-6)
     
     # Make y orthogonal to x
-    z = torch.cross(x, y_raw)
+    z = torch.cross(x, y_raw, dim=-1)
     z = F.normalize(z, dim=-1, eps = 1e-6)
     
     # Recalculate y to be orthogonal to x and z
-    y = torch.cross(z, x)
+    y = torch.cross(z, x, dim = -1)
 
     # Stack them to form the matrix
     x = x.view(-1, 3, 1)

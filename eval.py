@@ -7,6 +7,8 @@ from sklearn.metrics import roc_curve, roc_auc_score, auc
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, accuracy_score
+from utility_scripts.pose_estimation_utilities import compute_rotation_matrix_from_ortho6d, matrix_to_euler_angles
+
 
 ##################################
 
@@ -17,7 +19,6 @@ from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_
 def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
     """
     Evaluates Emotion Recognition (Multi-class Classification).
-    Returns: Average Loss, Accuracy
     """
     model.to(device)
     model.eval()
@@ -31,7 +32,7 @@ def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLo
             targets = labels['emotion'].to(device)
             
             # Forward pass
-            _, emotion_out, _, _, _ = model(images)
+            _, emotion_out, _, _, _, _, _ = model(images)
             
             preds = torch.argmax(emotion_out, dim=1)
 
@@ -73,7 +74,7 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
 
             targets = labels['age'].to(device).float()
             
-            _, _, age_logits, _, _ = model(images)
+            _, _, age_logits, _, _, _, _ = model(images)
             
             probs = F.softmax(age_logits, dim=1)
             predicted_ages = torch.sum(probs * age_values, dim=1) 
@@ -94,7 +95,6 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
 def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
     """
     Evaluates Gender Recognition (Binary Classification).
-    Returns: Average Loss, Accuracy
     """
     model.to(device)
     model.eval()
@@ -109,7 +109,7 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
             targets = labels['gender'].to(device)
             
             # Forward pass - Extract only gender output
-            _, _, _, gender_out, _ = model(images)
+            _, _, _, gender_out, _, _, _ = model(images)
             
             # Accuracy (Sigmoid > 0.5)
             probs = torch.sigmoid(gender_out)
@@ -136,7 +136,6 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
 def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device = 'cuda'):
     """
     Evaluates Race Recognition (Multi-class Classification).
-    Returns: Average Loss, Accuracy
     """
     model.to(device)
     model.eval()
@@ -149,7 +148,7 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
             images = images.to(device)
             targets = labels['race'].to(device)
             
-            _, _, _, _, race_out = model(images)
+            _, _, _, _, race_out, _, _ = model(images)
             
             preds = torch.argmax(race_out, dim=1)
 
@@ -168,6 +167,93 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
     return accuracy, f1, precision, recall, cm
 
 
+def evaluate_attributes(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device='cuda'):
+    """
+    Evaluates Attribute Recognition (Multi-label Classification).
+    """
+    model.to(device)
+    model.eval()
+    
+    predicted_labels = []
+    actual_labels = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Attributes", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            
+            # targets is the Tensor (B, 40)
+            targets = labels['attributes'].to(device)
+
+            _, _, _, _, _, attribute_out, _ = model(images)
+            
+            predictions = torch.sigmoid(attribute_out)
+            preds = (predictions > 0.5).long()
+
+            actual_labels.extend(targets.cpu().numpy())
+            predicted_labels.extend(preds.cpu().numpy())
+
+    actual_labels = np.array(actual_labels)
+    predicted_labels = np.array(predicted_labels)
+
+    
+    # Element-wise Accuracy (Lenient: % of correct individual bits)
+    element_wise_accuracy = (actual_labels == predicted_labels).mean()
+
+    f1 = f1_score(actual_labels, predicted_labels, average='micro')
+    precision = precision_score(actual_labels, predicted_labels, average='micro')
+    recall = recall_score(actual_labels, predicted_labels, average='micro')
+    
+    return element_wise_accuracy, f1, precision, recall
+
+
+def evaluate_head_pose(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, device='cuda'):
+    """
+    Evaluates Head Pose Estimation (Regression).
+    Returns Mean Absolute Error (MAE) for Roll, Pitch, and Yaw in Degrees.
+    """
+    model.to(device)
+    model.eval()
+    
+    # Accumulators for errors
+    roll_errors = []
+    pitch_errors = []
+    yaw_errors = []
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Validating Head Pose", leave=False):
+            images, labels = batch
+            images = images.to(device)
+            
+            # Ground Truth (Degrees)
+            pose_labels = labels['pose'].to(device)
+            
+            _, _, _, _, _, _, pose_output = model(images)
+            
+            # 1. Convert 6D Output -> Rotation Matrix
+            pred_matrices = compute_rotation_matrix_from_ortho6d(pose_output)
+            
+            # 2. Convert Matrix -> Euler Angles (Degrees)
+            pred_degrees = matrix_to_euler_angles(pred_matrices, to_degrees=True)
+            
+            # 3. Calculate Absolute Error (L1)
+            # Error = |Predicted - GT|
+            errors = torch.abs(pred_degrees - pose_labels)
+            
+            # Store errors (CPU)
+            roll_errors.extend(errors[:, 0].cpu().numpy())
+            pitch_errors.extend(errors[:, 1].cpu().numpy())
+            yaw_errors.extend(errors[:, 2].cpu().numpy())
+
+    # Calculate Mean Errors
+    mae_roll = np.mean(roll_errors)
+    mae_pitch = np.mean(pitch_errors)
+    mae_yaw = np.mean(yaw_errors)
+    
+    # Average MAE across all axes
+    mae_mean = np.mean([mae_roll, mae_pitch, mae_yaw])
+    
+    return mae_mean, mae_roll, mae_pitch, mae_yaw
 
 
 

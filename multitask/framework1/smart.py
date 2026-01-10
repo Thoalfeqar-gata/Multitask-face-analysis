@@ -269,6 +269,7 @@ class AttributeRecognitionSubnet(nn.Module):
         x = self.feature_fusion(multiscale_features)
         return self.head(x)
 
+
 class PoseEstimationSubnet(nn.Module):
     def __init__(self):
         super(PoseEstimationSubnet, self).__init__()

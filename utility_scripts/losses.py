@@ -62,7 +62,12 @@ def dldl_loss(logits, target, min_age=0, max_age=101, sigma=2.0, l1_weight=1.0):
 def geodesic_loss(m1, m2, eps = 1e-6):
     m = torch.bmm(m1, m2.transpose(1,2)) #batch*3*3
 
-    trace = (m[:, 0, 0], m[:, 1, 1], m[:, 2, 2])
-    cos = (trace - 1) / 2
-    theta_loss = torch.acos(torch.clamp(cos, -1 + eps, 1 - eps))
-    return torch.mean(theta_loss)
+    trace = (m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2])
+    cos_theta = (trace - 1) / 2
+
+    # Unstable: theta_loss = torch.acos(torch.clamp(cos_theta, -1 + eps, 1 - eps))
+    # Instead of minimizing the angle between the predicted and target rotation matrices,
+    # we maximize the cos of the angle (by minimizing 1-cos_theta)), which is equivalent 
+    # to minimizing the angle itself. This is more stable for training and doesn't
+    # produce nans 
+    return 1 - torch.mean(cos_theta)

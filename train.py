@@ -13,16 +13,23 @@ from torch.optim import lr_scheduler
 from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from multitask.framework1.smart import MultiTaskFaceAnalysisModel
-from configs.train_multitask_davit_s_ms1mv2_face_age_gender_race_emotion_attribute import config
+from multitask.framework1 import standard, smart
+from configs.train_multitask_davit_s_ms1mv2_face_age_gender_race_emotion_attribute_pose_standard import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
 from utility_scripts.losses import dldl_loss, geodesic_loss
+from utility_scripts.pose_estimation_utilities import compute_rotation_matrix_from_ortho6d, euler_angles_to_matrix
 
 torch.set_float32_matmul_precision('medium')
 
-
 def main(**kwargs): 
+
+    if kwargs['multitask_type'] == 'standard':
+        MultiTaskFaceAnalysisModel = standard.MultiTaskFaceAnalysisModel
+    elif kwargs['multitask_type'] == 'smart':
+        MultiTaskFaceAnalysisModel = smart.MultiTaskFaceAnalysisModel
+    else:
+        raise ValueError(f"Unsupported multitask type: {kwargs['multitask_type']}")
 
     use_validation = True # toggle validation datasets on or off. 
     return_name = False # Whether to return the name of the dataset or not.
@@ -36,6 +43,8 @@ def main(**kwargs):
     train_face_rec_transform = transforms['face_recognition']
     emotion_recognition_transform = transforms['emotion_recognition']
     age_gender_race_transform = transforms['age_gender_race_recognition']
+    attribute_recognition_transform = transforms['attribute_recognition']
+    pose_estimation_transform = transforms['head_pose_estimation']
     
 
     test_transform = v2.Compose([ # for testing on datasets other than face recognition.
@@ -49,34 +58,29 @@ def main(**kwargs):
     # training
     ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
     num_classes = ms1mv2.number_of_classes()
-    
-    affectnet_train = db.AffectNet(transform = emotion_recognition_transform, subset = 'train', return_name = return_name) 
-    rafdb_train = db.RAFDB(transform = emotion_recognition_transform, subset = 'train', return_name = return_name)
-    _, counts_affectnet = np.unique(affectnet_train.labels_df['label'], return_counts = True)
-    _, counts_rafdb = np.unique(rafdb_train.labels_df['label'], return_counts = True)
-    total_counts = counts_affectnet + counts_rafdb
-    total_samples = total_counts.sum()
-    num_emotion_classes = len(total_counts)
-    emotion_weights = torch.FloatTensor(total_samples / (num_emotion_classes * total_counts)).to(device)
-    print(f'Emotion Weights: {emotion_weights}')
+    celeba = db.CelebA(transform = attribute_recognition_transform, subset = 'train')
+    attribute_pos_weight = torch.tensor(celeba.get_attribute_weights()).to(device)
 
-    train_db_list = [
-        # Face recognition
-        ms1mv2,
-        # emotion recognition
-        affectnet_train,
-        rafdb_train,
-        # Age, Gender, and Race
-        db.FairFace(transform = age_gender_race_transform, subset = 'train', return_name = return_name), # gender and race
-        db.UTKFace(transform = age_gender_race_transform, subset = 'train', return_name = return_name), # age, gender, race
-        db.MORPH(transform = age_gender_race_transform, subset = 'train', return_name = return_name) # age, gender
-    ]    
+    train_db_dict = {
+        'face_recognition' : [ms1mv2],
+        'emotion_recognition' : [
+            db.AffectNet(transform = emotion_recognition_transform, subset = 'train'), 
+            db.RAFDB(transform = emotion_recognition_transform, subset = 'train')
+        ],
+        'age_gender_race_recognition' : [
+            db.MORPH(transform = age_gender_race_transform, subset = 'train'),
+            db.FairFace(transform = age_gender_race_transform, subset = 'train'),
+            db.UTKFace(transform = age_gender_race_transform, subset = 'train')
+        ],
+        'attribute_recognition' : [celeba],
+        'head_pose_estimation' : [db.W300LP(transform = pose_estimation_transform)],
+    }
     
     batch_size = kwargs.get('batch_size')
     num_workers = kwargs.get('num_workers')
 
     train_loader = db.get_balanced_loader(
-        train_db_list,
+        train_db_dict,
         batch_size = batch_size, 
         num_workers = num_workers,
         epoch_size = int(kwargs.get('epoch_size')),
@@ -109,15 +113,42 @@ def main(**kwargs):
             pin_memory = True,
         )
 
+        celeba_validation_db = torch.utils.data.DataLoader( # for attribute recognition
+            dataset = db.CelebA(transform = test_transform, subset = 'validation'),
+            batch_size = 64,
+            shuffle = True,
+            num_workers = 2,
+            pin_memory = True,
+        )
+
+        biwi = torch.utils.data.DataLoader( # for head pose estimation
+            dataset=db.BIWI(transform=test_transform),
+            batch_size=64,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True,
+        )
+
+
         print('fairface length: ', len(fairface_test_db) * 64)
         print('affectnet length: ', len(affectnet_validation_db) * 64)
         print('morph length: ', len(morph_test_db) * 64)
+        print('celeba length: ', len(celeba_validation_db) * 64)
+        print('biwi length: ', len(biwi) * 64)
 
     # Training setup
     model = MultiTaskFaceAnalysisModel(
         num_classes = num_classes,
         **kwargs
     )
+    # Enable Gradient Checkpointing on the backbone
+    # Check if your backbone supports this method (most Transformers do)
+    if hasattr(model.backbone, 'set_grad_checkpointing'):
+        model.backbone.set_grad_checkpointing(True)
+        print("Gradient Checkpointing Enabled! ;asldkfjgs;lkhgas;lkghas;lghkls;fjkgh;slhg;lhga;lskhgf;lgh;dlsgh;lkjf;alskg;lkgh")
+    else:
+        print("Gradient Checkpointing not Enabled! ;asldkfjgs;lkhgas;lkghas;lghkls;fjkgh;slhg;lhga;lskhgf;lgh;dlsgh;lkjf;alskg;lkgh")
+
     epochs = kwargs.get('max_epochs')
     optimizer_name = kwargs.get('optimizer')
     weight_decay = kwargs.get('weight_decay')
@@ -142,6 +173,9 @@ def main(**kwargs):
     age_estimation_subnet_parameters_count = 0
     gender_rec_subnet_parameters_count = 0
     race_rec_subnet_parameters_count = 0
+    attribute_rec_subnet_parameters_count = 0
+    pose_estimation_subnet_parameters_count = 0
+
     
     for name, param in model.named_parameters():
         if 'backbone' in name:
@@ -149,7 +183,7 @@ def main(**kwargs):
             backbone_params_count += param.numel()
 
         elif 'face_recognition_embedding_subnet' in name:
-            other_params.append(param)
+            face_rec_params.append(param)
             face_rec_subnet_parameters_count += param.numel()
 
         elif 'margin_head' in name:
@@ -172,9 +206,21 @@ def main(**kwargs):
             other_params.append(param)
             race_rec_subnet_parameters_count += param.numel()
 
+        elif 'attribute_recognition_subnet' in name:
+            other_params.append(param)
+            attribute_rec_subnet_parameters_count += param.numel()
+
+        elif 'head_pose_estimation_subnet' in name:
+            other_params.append(param)
+            pose_estimation_subnet_parameters_count += param.numel()
+
         else:
             other_params.append(param)
     
+    assert len(backbone_params) != 0, 'No backbone parameters found!'
+    assert len(face_rec_params) != 0, 'No face recognition subnet parameters found!'
+    assert len(margin_head_params) != 0, 'No margin head parameters found!'
+    assert len(other_params) != 0, 'No subnet parameters found!'
 
 
     print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
@@ -229,7 +275,7 @@ def main(**kwargs):
     print(f'Using amp dtype: {amp_dtype}')
 
     scaler = torch.amp.GradScaler(device = device, enabled = use_scaler)
-    dwa = DynamicWeightAverage(num_tasks = 5)
+    dwa = DynamicWeightAverage(num_tasks = 7)
     losses_weights = dwa.calculate_weights(avg_losses_current_epoch=None)
     losses_weights_history = [losses_weights]
 
@@ -288,6 +334,9 @@ def main(**kwargs):
         running_age_estimation_loss = 0.0
         running_gender_rec_loss = 0.0
         running_race_rec_loss = 0.0
+        running_attribute_rec_loss = 0.0
+        running_pose_estimation_loss = 0.0
+
 
 
         num_face_rec_samples = 0
@@ -295,6 +344,9 @@ def main(**kwargs):
         num_age_samples = 0
         num_gender_samples = 0
         num_race_samples = 0
+        num_attribute_samples = 0
+        num_pose_samples = 0
+
 
 
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
@@ -305,11 +357,27 @@ def main(**kwargs):
             labels = batch[1]
             images = images.to(device, non_blocking=True) # The labels are in a dict format, which cannot be moved to cuda. Task labels will be extracted below and converted to cuda one by one.
 
+
+            # Initialize the loss tensors at the start
+            # We use torch.tensor(0.0) so we can use .item() later safely
+            face_rec_loss = torch.tensor(0.0, device=device)
+            emotion_loss = torch.tensor(0.0, device=device)
+            age_loss = torch.tensor(0.0, device=device)
+            gender_loss = torch.tensor(0.0, device=device)
+            race_loss = torch.tensor(0.0, device=device)
+            attribute_loss = torch.tensor(0.0, device=device)
+            pose_loss = torch.tensor(0.0, device=device)
+
             optimizer.zero_grad(set_to_none = True)
 
             # forward pass
             with torch.amp.autocast(device_type = device, dtype = amp_dtype, enabled = (precision_mode != '32')):
-                (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output = model(images)
+
+                (normalized_embedding, embedding_norm), \
+                emotion_output, age_output, \
+                gender_output, race_output, \
+                attribute_output, \
+                pose_output = model(images)
 
                 # Face recognition loss
                 face_recognition_labels = labels['face_recognition'].to(device, non_blocking=True)
@@ -330,7 +398,7 @@ def main(**kwargs):
                 emotion_labels = labels['emotion'].to(device, non_blocking=True)
                 emotion_mask = emotion_labels != -1
                 if emotion_mask.sum() > 0: # check if we have emotion recognition samples in this batch
-                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask], weight = emotion_weights)
+                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask])
                     num_emotion_samples += emotion_mask.sum().item()
                 
 
@@ -361,10 +429,35 @@ def main(**kwargs):
                 if race_mask.sum() > 0: # check if we have race recognition samples in this batch
                     race_loss = F.cross_entropy(race_output[race_mask], race_labels[race_mask])
                     num_race_samples += race_mask.sum().item()
+
                 
+                # Attribute recognition
+                attribute_labels = labels['attributes'].to(device, non_blocking=True)
+                # CelebA returns either 0 or 1 for valid sample, where 0 = the attribute doesn't exist, 1 = attribute exists. The default label for dummy attributes is -1,
+                # so check if the first attribute from all the samples is not -1 to see which one is a valid label. 
+                attibute_mask = attribute_labels[:, 0] != -1
+                if attibute_mask.sum() > 0: # check if we have attribute recognition samples in this batch
+                    attribute_loss = F.binary_cross_entropy_with_logits(
+                        attribute_output[attibute_mask], 
+                        attribute_labels[attibute_mask].view(-1, 40).float(), 
+                        pos_weight=attribute_pos_weight
+                    )
+                    num_attribute_samples += attibute_mask.sum().item()
                 
 
-                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss]
+                # head pose estimation
+                pose_labels = labels['pose'].to(device, non_blocking=True)
+                pose_mask = pose_labels[:, 0] != -999 # same logic as attribute recognition
+                if pose_mask.sum() > 0: # check if we have head pose estimation samples in this batch
+                    # turn the raw angles into a rotation matrix
+                    target_rotation_matrices = euler_angles_to_matrix(pose_labels[pose_mask])
+                    # the model predicts two x and y vectors that are orthogonal to each other. Turn them into a rotation matrix.
+                    predicted_rotation_matrices = compute_rotation_matrix_from_ortho6d(pose_output[pose_mask])
+                    pose_loss = geodesic_loss(predicted_rotation_matrices, target_rotation_matrices)
+                    num_pose_samples += pose_mask.sum().item()
+                                
+                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss, attribute_loss, pose_loss]
+
                 total_loss = 0
                 for i in range(len(losses_weights)):
                     total_loss += losses_weights[i] * losses[i]
@@ -387,6 +480,9 @@ def main(**kwargs):
             running_age_estimation_loss += age_loss.item() * age_mask.sum().item()
             running_gender_rec_loss += gender_loss.item() * gender_mask.sum().item()
             running_race_rec_loss += race_loss.item() * race_mask.sum().item()
+            running_attribute_rec_loss += attribute_loss.item() * attibute_mask.sum().item()
+            running_pose_estimation_loss += pose_loss.item() * pose_mask.sum().item()
+            
 
             progress_bar.set_postfix(ordered_dict={
                 'loss' : f"{total_loss.item():.4f}",
@@ -395,6 +491,8 @@ def main(**kwargs):
                 'age_loss' : f"{age_loss.item():.4f}",
                 'gen_loss' : f"{gender_loss.item():.4f}",
                 'race_loss' : f"{race_loss.item():.4f}",
+                'attr_loss' : f"{attribute_loss.item():.4f}",
+                'pose_loss' : f"{pose_loss.item():.4f}",
                 'lr' : f"{optimizer.param_groups[1]['lr']:.6f}",
                 'lr_backbone' : f'{optimizer.param_groups[0]['lr']:.6f}',
                 'losses_weights' : f'{losses_weights}'
@@ -407,6 +505,8 @@ def main(**kwargs):
         epoch_age_loss = running_age_estimation_loss / num_age_samples
         epoch_gen_loss = running_gender_rec_loss / num_gender_samples
         epoch_race_loss = running_race_rec_loss / num_race_samples
+        epoch_attr_loss = running_attribute_rec_loss / num_attribute_samples
+        epoch_pose_loss = running_pose_estimation_loss / num_pose_samples
         losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss]))
         losses_weights_history.append(losses_weights)
         epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss
@@ -418,6 +518,8 @@ def main(**kwargs):
         print(f"  Age Loss: {epoch_age_loss:.4f}")
         print(f"  Gender Loss: {epoch_gen_loss:.4f}")
         print(f"  Race Loss: {epoch_race_loss:.4f}")
+        print(f"  Attribute Loss: {epoch_attr_loss:.4f}")
+        print(f"  Pose Loss: {epoch_pose_loss:.4f}")
         print(f"  Losses Weights: {losses_weights}")
 
         checkpoint = { 
@@ -433,8 +535,8 @@ def main(**kwargs):
 
         # Create the checkpoint file if it doesn't exist.
         if not os.path.exists(checkpoint_path):
-            os.makedirs(os.path.split(checkpoint_path)[0], exist_ok = True)
-            f = open(checkpoint_path, 'x')
+            os.makedirs(os.path.split(checkpoint_path)[0], exist_ok = True) # create directory
+            f = open(checkpoint_path, 'x') # create file
         
         torch.save(
             checkpoint, 
@@ -475,7 +577,17 @@ def main(**kwargs):
             # Race recognition
             race_accuracy, _, _, _, _ = eval.evaluate_race(model = model, dataloader = fairface_test_db, device = device)
             print(f'Accuracy for FairFace (race recognition) = {race_accuracy}.')
+
+            # Attribute recognition
+            attribute_accuracy, attribute_f1, _, _ = eval.evaluate_attributes(model = model, dataloader = celeba_validation_db)
+            print(f'Accuracy for CelebA (attribute recognition) = {attribute_accuracy}.')
+            print(f'F1 score for CelebA (attribute recognition) = {attribute_f1}')
+
+            # Head pose estimatin 
+            mae_mean, _, _, _ = eval.evaluate_head_pose(model = model, dataloader = biwi)
+            print(f'MAE for BIWI (head pose estimation) = {mae_mean}.')
     
+
     # Save the final model
     output_model_path = os.path.join('data', 'models', output_folder_name)
     os.makedirs(output_model_path, exist_ok = True)
@@ -485,7 +597,7 @@ def main(**kwargs):
     )
 
     # Plot dynamic weight average history
-    task_names = ['Face Recognition', 'Emotion Recognition', 'Age Estimation', 'Gender Recognition', 'Race Recognition']
+    task_names = ['Face Recognition', 'Emotion Recognition', 'Age Estimation', 'Gender Recognition', 'Race Recognition', 'Attribute Recognition', 'Head pose estimation']
     plt.figure(figsize=(10, 5), dpi=600)
     plt.title('The history of the loss weights per task using Dynamic Weight Average.')
     
@@ -506,9 +618,9 @@ def main(**kwargs):
     os.makedirs(os.path.join('data', 'figures', output_folder_name), exist_ok=True)
     
     plt.savefig(
-        os.path.join('data', 'figures', output_folder_name, 'Task_loss_weights_history.png')
+        os.path.join('data', 'figures', 'MultiTask Training', output_folder_name, 'Task_loss_weights_history.png')
     )
-    plt.close() # Good practice to close the figure to free memory
+    plt.close()
 
             
 if __name__ == '__main__':

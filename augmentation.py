@@ -59,7 +59,7 @@ def get_task_augmentation_transforms():
     attribute_recognition_transform = v2.Compose([
         v2.ToPILImage(),
         v2.RandomHorizontalFlip(p = 0.5),
-        v2.RandomAffine(degrees = 10, padding_mode = 'reflection'),
+        v2.RandomAffine(degrees = 10),
         v2.RandomGrayscale(p = 0.1),
         v2.RandomApply([v2.GaussianBlur(kernel_size = 3, sigma = (0.1, 2))], p = 0.1),
         v2.RandomApply([v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)], p = 0.1),
