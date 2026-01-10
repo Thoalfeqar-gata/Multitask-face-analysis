@@ -141,13 +141,7 @@ def main(**kwargs):
         num_classes = num_classes,
         **kwargs
     )
-    # Enable Gradient Checkpointing on the backbone
-    # Check if your backbone supports this method (most Transformers do)
-    if hasattr(model.backbone, 'set_grad_checkpointing'):
-        model.backbone.set_grad_checkpointing(True)
-        print("Gradient Checkpointing Enabled! ;asldkfjgs;lkhgas;lkghas;lghkls;fjkgh;slhg;lhga;lskhgf;lgh;dlsgh;lkjf;alskg;lkgh")
-    else:
-        print("Gradient Checkpointing not Enabled! ;asldkfjgs;lkhgas;lkghas;lghkls;fjkgh;slhg;lhga;lskhgf;lgh;dlsgh;lkjf;alskg;lkgh")
+
 
     epochs = kwargs.get('max_epochs')
     optimizer_name = kwargs.get('optimizer')
