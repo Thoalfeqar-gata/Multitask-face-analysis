@@ -480,16 +480,15 @@ def main(**kwargs):
 
             progress_bar.set_postfix(ordered_dict={
                 'loss' : f"{total_loss.item():.4f}",
-                'fr_loss' : f"{face_rec_loss.item():.4f}",
-                'em_loss' : f"{emotion_loss.item():.4f}",
-                'age_loss' : f"{age_loss.item():.4f}",
-                'gen_loss' : f"{gender_loss.item():.4f}",
-                'race_loss' : f"{race_loss.item():.4f}",
-                'attr_loss' : f"{attribute_loss.item():.4f}",
-                'pose_loss' : f"{pose_loss.item():.4f}",
+                'fr' : f"{face_rec_loss.item():.4f}",
+                'em' : f"{emotion_loss.item():.4f}",
+                'age' : f"{age_loss.item():.4f}",
+                'gen' : f"{gender_loss.item():.4f}",
+                'race' : f"{race_loss.item():.4f}",
+                'attr' : f"{attribute_loss.item():.4f}",
+                'pose' : f"{pose_loss.item():.4f}",
                 'lr' : f"{optimizer.param_groups[1]['lr']:.6f}",
-                'lr_backbone' : f'{optimizer.param_groups[0]['lr']:.6f}',
-                'losses_weights' : f'{losses_weights}'
+                'lr_back' : f'{optimizer.param_groups[0]['lr']:.6f}',
             })
 
         scheduler.step()
@@ -501,9 +500,10 @@ def main(**kwargs):
         epoch_race_loss = running_race_rec_loss / num_race_samples
         epoch_attr_loss = running_attribute_rec_loss / num_attribute_samples
         epoch_pose_loss = running_pose_estimation_loss / num_pose_samples
-        losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss]))
+        losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss, epoch_attr_loss, epoch_pose_loss]))
         losses_weights_history.append(losses_weights)
-        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss
+        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss + epoch_attr_loss + epoch_pose_loss
+
 
         print(f"\nEpoch {epoch+1} Summary:")
         print(f"  Total Loss: {epoch_loss:.4f}")
@@ -547,7 +547,7 @@ def main(**kwargs):
                 model.backbone,
                 model.face_recognition_embedding_subnet
             )
-            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['LFW', 'CPLFW', 'CALFW'])
+            metrics = eval.evaluate_face_recognition(face_rec_model, datasets_to_test = ['CPLFW', 'CALFW'])
 
             for key, db_metrics in metrics.items():
                 accuracy, _, _, f1_score, _, _, _, _ = db_metrics
@@ -609,7 +609,7 @@ def main(**kwargs):
     plt.ylabel('Task weight')
     
     # Ensure directory exists before saving
-    os.makedirs(os.path.join('data', 'figures', output_folder_name), exist_ok=True)
+    os.makedirs(os.path.join('data', 'figures', 'MultiTask Training', output_folder_name), exist_ok=True)
     
     plt.savefig(
         os.path.join('data', 'figures', 'MultiTask Training', output_folder_name, 'Task_loss_weights_history.png')
