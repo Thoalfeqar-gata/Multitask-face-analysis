@@ -12,9 +12,9 @@ from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmentation import Augmenter
-from configs.train_davit_s_ms1mv2_adaface import config # change the config to change the script's behaviour
+from configs.pretrain_davit_t_ms1mv2_adaface import config # change the config to change the script's behaviour
 
-from multitask.framework1.standard import FaceRecognitionEmbeddingSubnet
+from multitask.framework1.subnets import FaceRecognitionEmbeddingSubnet
 
 torch.set_float32_matmul_precision('medium')
 
@@ -298,7 +298,10 @@ def main(args):
     model = FaceRecognitionModel(num_classes=data_module.num_classes, **args)
     
     checkpoint_path = os.path.join('checkpoints',f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}')
-    os.makedirs(checkpoint_path, exist_ok = True)
+
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path, exist_ok = True)
+
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=f'checkpoints/{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}',
@@ -320,11 +323,13 @@ def main(args):
         gradient_clip_algorithm=args['gradient_clip_algorithm'],
     )
 
-    if len(os.listdir(checkpoint_path)) > 0:
-        ckpt_path = os.path.join(checkpoint_path, os.listdir(checkpoint_path)[0])
-        trainer.fit(model, data_module, ckpt_path=ckpt_path)
-    else:
+    if len(os.listdir(checkpoint_path)) == 0:
         trainer.fit(model, data_module)
+    else:
+        filename = os.listdir(checkpoint_path)[0]
+        ckpt_path = os.path.join(checkpoint_path, filename)
+        trainer.fit(model, data_module, ckpt_path=ckpt_path)
+
 
     # Save after training
     output_path = os.path.join('data', 'models', f'{args['backbone_name']}_{args['head_name']}_{args['dataset_name']}')

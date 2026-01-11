@@ -95,6 +95,7 @@ class SmartMultiScaleFusion(nn.Module):
         self.relu = nn.ReLU(inplace = True)
 
 
+
     def forward(self, multiscale_features):
         # Input features are expected to be in (N, L, C) format.
         # Reshape them to (N, C, H, W) for 2D convolutions.
