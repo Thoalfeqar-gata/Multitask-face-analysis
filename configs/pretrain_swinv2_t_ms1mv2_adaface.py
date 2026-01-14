@@ -1,5 +1,5 @@
 config = {
-    'backbone_name' : 'davit_t',
+    'backbone_name' : 'swin_v2_t',
     'head_name' : 'adaface',
     'embedding_dim' : 512,
     'margin' : 0.4,

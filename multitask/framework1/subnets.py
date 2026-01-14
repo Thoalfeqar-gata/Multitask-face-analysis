@@ -19,8 +19,6 @@ class FaceRecognitionEmbeddingSubnet(nn.Module):
         self.feature_head = nn.Sequential(
             nn.Linear(feature_embedding_dim, feature_embedding_dim, bias=False),
             nn.BatchNorm1d(feature_embedding_dim, eps=2e-5),
-            nn.ReLU(), 
-            nn.Dropout(0.1),
             nn.Linear(feature_embedding_dim, embedding_dim, bias=False),
             nn.BatchNorm1d(embedding_dim, eps=2e-5) 
         )
@@ -53,7 +51,7 @@ class BasicHead(nn.Module):
             self.feature_fusion = SmartMultiScaleFusion()
 
         self.head = nn.Sequential(
-            nn.AdaptiveMaxPool2d((1, 1)), # 7x7x512 -> 1x1x512
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
             nn.ReLU(),
             

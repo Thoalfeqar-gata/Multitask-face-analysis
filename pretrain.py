@@ -12,7 +12,7 @@ from torchvision import transforms
 from torch.optim import lr_scheduler
 from lightning.pytorch import loggers 
 from augmentation import Augmenter
-from configs.pretrain_davit_t_ms1mv2_adaface import config # change the config to change the script's behaviour
+from configs.pretrain_swinv2_t_ms1mv2_adaface import config # change the config to change the script's behaviour
 
 from multitask.framework1.subnets import FaceRecognitionEmbeddingSubnet
 
@@ -326,7 +326,7 @@ def main(args):
     if len(os.listdir(checkpoint_path)) == 0:
         trainer.fit(model, data_module)
     else:
-        filename = os.listdir(checkpoint_path)[0]
+        filename = os.listdir(checkpoint_path)[1]
         ckpt_path = os.path.join(checkpoint_path, filename)
         trainer.fit(model, data_module, ckpt_path=ckpt_path)
 
