@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from multitask.framework1.multiscale_fusion import StandardMultiScaleFusion, SmartMultiScaleFusion
+from multitask.framework1.multiscale_fusion import StandardMultiScaleFusion, LightMultiScaleFusion
 
 
 ##########################
@@ -48,20 +48,20 @@ class BasicHead(nn.Module):
         if multiscale_fusion_type == 'standard':
             self.feature_fusion = StandardMultiScaleFusion()
         else:
-            self.feature_fusion = SmartMultiScaleFusion()
+            self.feature_fusion = LightMultiScaleFusion()
 
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
             nn.Flatten(), # 1x1x512 -> 512
-            nn.ReLU(),
             
             nn.Linear(in_features = 512, out_features = 512, bias = False),
             nn.BatchNorm1d(num_features = 512, eps = 2e-5),
-            nn.ReLU(),
-            
+            nn.ReLU(inplace = True),
+            nn.Dropout(0.2),
+
             nn.Linear(in_features = 512, out_features = 512, bias = False),
             nn.BatchNorm1d(num_features = 512, eps = 2e-5),
-            nn.ReLU(),
+            nn.ReLU(inplace = True),
             nn.Dropout(0.2),
         )
     

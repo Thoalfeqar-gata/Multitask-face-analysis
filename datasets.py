@@ -29,7 +29,7 @@ def get_balanced_loader(datasets_dict: dict[str, torch.utils.data.Dataset], batc
     task_sample_weights = [] # accumulate sample weights per task here.
     task_datasets = [] # accumulate concatenated datasets per task here.
     for task_name in datasets_dict.keys():
-        if len(datasets_dict[task_name]) == 1: # for tasks with one datasets
+        if len(datasets_dict[task_name]) == 1: # for tasks with one dataset
             task_datasets.append(datasets_dict[task_name][0])
             task_sample_weights.append(datasets_dict[task_name][0].get_sample_weights() * task_weight)
         else: # for tasks with more than one dataset

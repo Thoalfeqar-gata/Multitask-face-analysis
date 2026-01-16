@@ -13,23 +13,16 @@ from torch.optim import lr_scheduler
 from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from multitask.framework1 import standard, smart
-from configs.train_multitask_davit_s_ms1mv2_face_age_gender_race_emotion_attribute_pose_standard import config
+from multitask.framework1.model import MultiTaskFaceAnalysisModel
+from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_pose_light import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
-from utility_scripts.losses import dldl_loss, geodesic_loss
+from utility_scripts.losses import dldl_loss, geodesic_loss, AsymmetricLossOptimized
 from utility_scripts.pose_estimation_utilities import compute_rotation_matrix_from_ortho6d, euler_angles_to_matrix
 
 torch.set_float32_matmul_precision('medium')
 
 def main(**kwargs): 
-
-    if kwargs['multitask_type'] == 'standard':
-        MultiTaskFaceAnalysisModel = standard.MultiTaskFaceAnalysisModel
-    elif kwargs['multitask_type'] == 'smart':
-        MultiTaskFaceAnalysisModel = smart.MultiTaskFaceAnalysisModel
-    else:
-        raise ValueError(f"Unsupported multitask type: {kwargs['multitask_type']}")
 
     use_validation = True # toggle validation datasets on or off. 
     return_name = False # Whether to return the name of the dataset or not.
@@ -59,7 +52,6 @@ def main(**kwargs):
     ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
     num_classes = ms1mv2.number_of_classes()
     celeba = db.CelebA(transform = attribute_recognition_transform, subset = 'train')
-    attribute_pos_weight = torch.tensor(celeba.get_attribute_weights()).to(device)
 
     train_db_dict = {
         'face_recognition' : [ms1mv2],
@@ -234,8 +226,11 @@ def main(**kwargs):
     # Create parameter groups with different learning rates
     param_groups = [
         {'params': backbone_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
+        {'params': face_rec_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
+        {'params': margin_head_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
         {'params': other_params, 'lr': learning_rate}
     ]
+
 
 
     if optimizer_name == 'adamw':
@@ -272,6 +267,9 @@ def main(**kwargs):
     dwa = DynamicWeightAverage(num_tasks = 7)
     losses_weights = dwa.calculate_weights(avg_losses_current_epoch=None)
     losses_weights_history = [losses_weights]
+
+    # asymmetric loss for attribute recognition
+    asymmetric_loss = AsymmetricLossOptimized()
 
 
 
@@ -431,12 +429,15 @@ def main(**kwargs):
                 # so check if the first attribute from all the samples is not -1 to see which one is a valid label. 
                 attibute_mask = attribute_labels[:, 0] != -1
                 if attibute_mask.sum() > 0: # check if we have attribute recognition samples in this batch
-                    attribute_loss = F.binary_cross_entropy_with_logits(
-                        attribute_output[attibute_mask], 
-                        attribute_labels[attibute_mask].view(-1, 40).float(), 
-                        pos_weight=attribute_pos_weight
-                    )
+                    # attribute_loss = F.binary_cross_entropy_with_logits(
+                    #     attribute_output[attibute_mask], 
+                    #     attribute_labels[attibute_mask].view(-1, 40).float(),     # regular bce loss
+                    #     pos_weight=attribute_pos_weight
+                    # )
+
+                    attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
                     num_attribute_samples += attibute_mask.sum().item()
+
                 
 
                 # head pose estimation
@@ -487,8 +488,8 @@ def main(**kwargs):
                 'race' : f"{race_loss.item():.4f}",
                 'attr' : f"{attribute_loss.item():.4f}",
                 'pose' : f"{pose_loss.item():.4f}",
-                'lr' : f"{optimizer.param_groups[1]['lr']:.6f}",
-                'lr_back' : f'{optimizer.param_groups[0]['lr']:.6f}',
+                'lr' : f"{optimizer.param_groups[3]['lr']:.7f}",
+                'lr_back' : f'{optimizer.param_groups[0]['lr']:.7f}',
             })
 
         scheduler.step()

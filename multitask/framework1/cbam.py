@@ -27,7 +27,7 @@ class CAM(nn.Module):
         super(CAM, self).__init__()
         
         self.mlp = nn.Sequential(
-            nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=False),
+            nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=False), # nn.Conv2d(kernel_size = 1) is equivalent to a nn.Linear, but cleaner to implement
             nn.SiLU(inplace=True), # SiLU Is smoother than ReLU
             nn.Conv2d(channels // reduction, channels, kernel_size=1, bias=False)
         )

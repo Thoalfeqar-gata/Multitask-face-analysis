@@ -617,8 +617,7 @@ class SwinTransformerV2(nn.Module):
         multiscale_features = []
         for i, layer in enumerate(self.layers):
             x = layer(x)
-            # In the original paper, the feature maps are extracted after the patch merging layer.
-            # But we extract them before, to get multi-scale features.
+
             multiscale_features.append(x)
             if self.downsample_layers[i] is not None:
                 x = self.downsample_layers[i](x)

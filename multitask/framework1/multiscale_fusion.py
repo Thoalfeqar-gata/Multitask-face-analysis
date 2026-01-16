@@ -33,68 +33,69 @@ class DepthwiseSeparableConv(nn.Module):
         return x
 
 
-class SmartMultiScaleFusion(nn.Module):
+class LightMultiScaleFusion(nn.Module):
     """
         This module fuses the multiscale features output by a swin or a davit backbone.
         The features come from the four stages in the backbone.
-        The feature sizes are as follows:
+        The input feature sizes are as follows:
             transformer_embedding_dim = 96 for tiny and small model, 128 for base model
-            stage_0: 56x56, transformer_embedding_dim channels
-            stage_1: 28x28, transformer_embedding_dim * 2 channels
-            stage_2: 14x14, transformer_embedding_dim * 4 channels
-            stage_3: 7x7, tranformer_embedding_dim * 8 channels
+            stage_0: h0xw0, transformer_embedding_dim channels
+            stage_1: h1xw1, transformer_embedding_dim * 2 channels
+            stage_2: h2xw2, transformer_embedding_dim * 4 channels
+            stage_3: h3xw3, transformer_embedding_dim * 8 channels
 
         The output shape after the fusion is:
-            fused_output: 7x7x512 channels
+            fused_output: 7x7x512 out_channel_dim
     """
-    def __init__(self, stage_out_channels=[50, 100, 150, 212], transformer_embedding_dim = 96):
-        super(SmartMultiScaleFusion, self).__init__()
+    def __init__(self, out_channel_dim = 512, transformer_embedding_dim = 96):
+        super(LightMultiScaleFusion, self).__init__()
         
-        """
+        self.activation = nn.SiLU(inplace = True)
         
-            The contribution of each stage to the final 512 channel size is as follows:
-            stage_0: stage_out_channels[0]
-            stage_1: stage_out_channels[1]
-            stage_2: stage_out_channels[2]
-            stage_3: stage_out_channels[3]
-        
-        """
-        
+        # Spatial downsampling layers.
         # stage_0
-        self.conv11 = DepthwiseSeparableConv(in_channels = transformer_embedding_dim, out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 56 x 56 x transformer_embedding_dim -> 28 x 28 x stage_out_channels[0]
-        self.conv12 = DepthwiseSeparableConv(in_channels = stage_out_channels[0], out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 28 x 28 x stage_out_channels[0] -> 14 x 14 x stage_out_channels[0]
-        self.conv13 = DepthwiseSeparableConv(in_channels = stage_out_channels[0], out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x stage_out_channels[0] -> 7 x 7 x stage_out_channels[0]
+        self.down0 = nn.Sequential(
+            DepthwiseSeparableConv(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim,
+                                kernel_size = 3, stride = 2, padding = 1), # 56 x 56 x transformer_embedding_dim -> 28 x 28 x transformer_embedding_dim
+            self.activation,
+            DepthwiseSeparableConv(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim,
+                                kernel_size = 3, stride = 2, padding = 1), # 28 x 28 x transformer_embedding_dim -> 14 x 14 x transformer_embedding_dim
+            self.activation,
+            DepthwiseSeparableConv(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim,
+                                kernel_size = 3, stride = 2, padding = 1), # 14 x 14 x transformer_embedding_dim -> 7 x 7 x transformer_embedding_dim
+        )
 
         # stage_1
-        self.conv21 = DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 2, out_channels = stage_out_channels[1],
-                                kernel_size = 3, stride = 2, padding = 1) # 28 x 28 x transformer_embedding_dim * 2 -> 14 x 14 x stage_out_channels[1]
-        self.conv22 = DepthwiseSeparableConv(in_channels = stage_out_channels[1], out_channels = stage_out_channels[1],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x stage_out_channels[1] -> 7 x 7 x stage_out_channels[1]
+        self.down1 = nn.Sequential(
+            DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 2, out_channels = transformer_embedding_dim * 2,
+                                kernel_size = 3, stride = 2, padding = 1), # 28 x 28 x transformer_embedding_dim * 2 -> 14 x 14 x transformer_embedding_dim * 2
+            self.activation,
+            DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 2, out_channels = transformer_embedding_dim * 2,
+                                kernel_size = 3, stride = 2, padding = 1), # 14 x 14 x transformer_embedding_dim * 2 -> 7 x 7 x transformer_embedding_dim * 2
+        )
+
 
         # stage_2
-        self.conv31 = DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 4, out_channels = stage_out_channels[2],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x transformer_embedding_dim * 4 -> 7 x 7 x stage_out_channels[2]
+        self.down2 = DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 4, out_channels = transformer_embedding_dim * 4,
+                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x transformer_embedding_dim * 4 -> 7 x 7 x transformer_embedding_dim * 4
         
-        # stage_3
-        self.conv41 = DepthwiseSeparableConv(in_channels = transformer_embedding_dim * 8, out_channels = stage_out_channels[3],
-                                kernel_size = 3, stride = 1, padding = 1) # 7 x 7 x transformer_embedding_dim * 8 -> 7 x 7 x stage_out_channels[3]
+        # No downsampling for stage 3
         
         
-        # CBAM Blocks used to apply attention before downsampling. Don't use skip connection to filter unrelated features.
-        self.cbam0 = CBAM(channels = transformer_embedding_dim, reduction = 4, skip_connection=False)
-        self.cbam1 = CBAM(channels = transformer_embedding_dim * 2, reduction = 4, skip_connection=False)
-        self.cbam2 = CBAM(channels = transformer_embedding_dim * 4, reduction = 4, skip_connection=False)
-        self.cbam3 = CBAM(channels = transformer_embedding_dim * 8, reduction = 4, skip_connection=False)
+        
+        # CBAM Blocks used to apply attention before spatial downsampling. Don't use skip connection to filter unrelated features.
+        self.cbam0 = CBAM(channels = transformer_embedding_dim, reduction = 16, skip_connection=False)
+        self.cbam1 = CBAM(channels = transformer_embedding_dim * 2, reduction = 16, skip_connection=False)
+        self.cbam2 = CBAM(channels = transformer_embedding_dim * 4, reduction = 16, skip_connection=False)
+
 
         # Final CBAM block to apply attention after the concatenation. Use skip connection to refine the features instead of filtering them.
-        self.cbam_final = CBAM(channels = 512, reduction = 4, skip_connection=True)
+        self.cbam_final = CBAM(channels = transformer_embedding_dim * (8 + 4 + 2 + 1), reduction = 16, skip_connection=True)
+
+        # 1x1 conv to reduce the number of channels after the concatenation + CBAM.
+        self.conv1x1 = nn.Conv2d(in_channels = transformer_embedding_dim * (8 + 4 + 2 + 1), out_channels = out_channel_dim, 
+                                kernel_size = 1, stride = 1, padding = 0, bias = False)
         
-        self.relu = nn.ReLU(inplace = True)
-
-
 
     def forward(self, multiscale_features):
         # Input features are expected to be in (N, L, C) format.
@@ -104,85 +105,114 @@ class SmartMultiScaleFusion(nn.Module):
         
         stage_0, stage_1, stage_2, stage_3 = multiscale_features
         
-        stage_0 = stage_0.permute(0, 2, 1).reshape(-1, stage_0.shape[2], 56, 56)
-        stage_1 = stage_1.permute(0, 2, 1).reshape(-1, stage_1.shape[2], 28, 28)
-        stage_2 = stage_2.permute(0, 2, 1).reshape(-1, stage_2.shape[2], 14, 14)
-        stage_3 = stage_3.permute(0, 2, 1).reshape(-1, stage_3.shape[2], 7, 7)
+        B, L0, C0 = stage_0.shape
+        h0 = w0 = int(L0 ** 0.5)
+        stage_0 = stage_0.permute(0, 2, 1).reshape(-1, C0, h0, w0)
 
-        stage_0 = self.cbam0(stage_0)
-        stage_0 = self.relu(self.conv11(stage_0))
-        stage_0 = self.relu(self.conv12(stage_0))
-        stage_0 = self.relu(self.conv13(stage_0))
+        B, L1, C1 = stage_1.shape
+        h1 = w1 = int(L1 ** 0.5)
+        stage_1 = stage_1.permute(0, 2, 1).reshape(-1, C1, h1, w1)
+        
+        B, L2, C2 = stage_2.shape
+        h2 = w2 = int(L2 ** 0.5)
+        stage_2 = stage_2.permute(0, 2, 1).reshape(-1, C2, h2, w2)
+        
+        B, L3, C3 = stage_3.shape
+        h3 = w3 = int(L3 ** 0.5)
+        stage_3 = stage_3.permute(0, 2, 1).reshape(-1, C3, h3, w3)
 
+
+        # attention before spatial downsampling
+        stage_0 = self.cbam0(stage_0) 
         stage_1 = self.cbam1(stage_1)
-        stage_1 = self.relu(self.conv21(stage_1))
-        stage_1 = self.relu(self.conv22(stage_1))
-
         stage_2 = self.cbam2(stage_2)
-        stage_2 = self.relu(self.conv31(stage_2))
-
-        stage_3 = self.cbam3(stage_3)
-        stage_3 = self.relu(self.conv41(stage_3))
-
-        fused_output = torch.cat([stage_0, stage_1, stage_2, stage_3], dim = 1)
-        
-        
-        return self.cbam_final(fused_output)
     
+
+        # spatial downsampling
+        stage_0 = self.down0(stage_0)
+        stage_1 = self.down1(stage_1)
+        stage_2 = self.down2(stage_2)
+        # no spatial downsampling for stage 3
+
+
+        # concatenate the features to generate a giant feature vector
+        fused_features = torch.cat([stage_0, stage_1, stage_2, stage_3], dim = 1)
+
+        # apply CBAM before channel compression
+        fused_features = self.cbam_final(fused_features)
+
+        # perform channel compression
+        fused_features = self.conv1x1(fused_features)
+        
+        return fused_features
+    
+
 
 class StandardMultiScaleFusion(nn.Module):
     """
         This module fuses the multiscale features output by a swin or a davit backbone.
         The features come from the four stages in the backbone.
-        The feature sizes are as follows:
+        The input feature sizes are as follows:
             transformer_embedding_dim = 96 for tiny and small model, 128 for base model
-            stage_0: 56x56, transformer_embedding_dim channels
-            stage_1: 28x28, transformer_embedding_dim * 2 channels
-            stage_2: 14x14, transformer_embedding_dim * 4 channels
-            stage_3: 7x7, tranformer_embedding_dim * 8 channels
+            stage_0: h0xw0, transformer_embedding_dim channels
+            stage_1: h1xw1, transformer_embedding_dim * 2 channels
+            stage_2: h2xw2, transformer_embedding_dim * 4 channels
+            stage_3: h3xw3, transformer_embedding_dim * 8 channels
 
         The output shape after the fusion is:
-            fused_output: 7x7x512 channels
+            fused_output: 7x7xout_channel_dim 
     """
-    def __init__(self, stage_out_channels=[50, 100, 150, 212], transformer_embedding_dim = 96):
+    def __init__(self, out_channel_dim = 512, transformer_embedding_dim = 96):
         super(StandardMultiScaleFusion, self).__init__()
         
-        """
-        
-            The contribution of each stage to the final 512 channel size is as follows:
-            stage_0: stage_out_channels[0]
-            stage_1: stage_out_channels[1]
-            stage_2: stage_out_channels[2]
-            stage_3: stage_out_channels[3]
-        
-        """
-        
+        self.activation = nn.ReLU(inplace = True)
+
+        # The following depthwise convolutional layers are used to downsample the spatial resolution and keeping the channel size fixed.
         # stage_0
-        self.conv11 = nn.Conv2d(in_channels = transformer_embedding_dim, out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 56 x 56 x transformer_embedding_dim -> 28 x 28 x stage_out_channels[0]
-        self.conv12 = nn.Conv2d(in_channels = stage_out_channels[0], out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 28 x 28 x stage_out_channels[0] -> 14 x 14 x stage_out_channels[0]
-        self.conv13 = nn.Conv2d(in_channels = stage_out_channels[0], out_channels = stage_out_channels[0],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x stage_out_channels[0] -> 7 x 7 x stage_out_channels[0]
+        self.down0 = nn.Sequential(
+            nn.Conv2d(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim, 
+                                kernel_size = 3, stride = 2, padding = 1, bias = False), # 56 x 56 x transformer_embedding_dim -> 28 x 28 x transformer_embedding_dim
+            self.activation,
+            nn.Conv2d(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim,
+                                kernel_size = 3, stride = 2, padding = 1, bias = False), # 28 x 28 x transformer_embedding_dim -> 14 x 14 x transformer_embedding_dim
+            self.activation,
+            nn.Conv2d(in_channels = transformer_embedding_dim, out_channels = transformer_embedding_dim,
+                                kernel_size = 3, stride = 2, padding = 1, bias = False) # 14 x 14 x transformer_embedding_dim -> 7 x 7 x transformer_embedding_dim
+        )
 
         # stage_1
-        self.conv21 = nn.Conv2d(in_channels = transformer_embedding_dim * 2, out_channels = stage_out_channels[1],
-                                kernel_size = 3, stride = 2, padding = 1) # 28 x 28 x transformer_embedding_dim * 2 -> 14 x 14 x stage_out_channels[1]
-        self.conv22 = nn.Conv2d(in_channels = stage_out_channels[1], out_channels = stage_out_channels[1],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x stage_out_channels[1] -> 7 x 7 x stage_out_channels[1]
+        self.down1 =  nn.Sequential(
+            nn.Conv2d(in_channels = transformer_embedding_dim * 2, out_channels = transformer_embedding_dim * 2,
+                                kernel_size = 3, stride = 2, padding = 1, bias = False), # 28 x 28 x transformer_embedding_dim * 2 -> 14 x 14 x transformer_embedding_dim 2
+            self.activation,
+            nn.Conv2d(in_channels = transformer_embedding_dim * 2, out_channels = transformer_embedding_dim * 2,
+                                kernel_size = 3, stride = 2, padding = 1, bias = False) # 14 x 14 x transformer_embedding_dim * 2 -> 7 x 7 x transformer_embedding_dim * 2
+        )
 
         # stage_2
-        self.conv31 = nn.Conv2d(in_channels = transformer_embedding_dim * 4, out_channels = stage_out_channels[2],
-                                kernel_size = 3, stride = 2, padding = 1) # 14 x 14 x transformer_embedding_dim * 4 -> 7 x 7 x stage_out_channels[2]
-        
-        # stage_3
-        self.conv41 = nn.Conv2d(in_channels = transformer_embedding_dim * 8, out_channels = stage_out_channels[3],
-                                kernel_size = 3, stride = 1, padding = 1) # 7 x 7 x transformer_embedding_dim * 8 -> 7 x 7 x stage_out_channels[3]
-        
+        self.down2 = nn.Conv2d(
+            in_channels = transformer_embedding_dim * 4, out_channels = transformer_embedding_dim * 4,
+            kernel_size = 3, stride = 2, padding = 1
+        )
 
-        self.cbam = CBAM(channels = 512, reduction = 4, skip_connection=True)
-        self.relu = nn.ReLU(inplace = True)
+        # no downsampling for stage 3
+        
+        
+        # CBAM Blocks used to apply attention before spatial downsampling (stages 1, 2, and 3). Don't use skip connection to filter unrelated features.
+        self.cbam0 = CBAM(channels = transformer_embedding_dim, reduction = 8, skip_connection=False)
+        self.cbam1 = CBAM(channels = transformer_embedding_dim * 2, reduction = 8, skip_connection=False)
+        self.cbam2 = CBAM(channels = transformer_embedding_dim * 4, reduction = 8, skip_connection=False)
+  
 
+        # Final CBAM block to apply attention after the concatenation. Use skip connection to refine the features instead of filtering them.
+        self.cbam_final = CBAM(channels = transformer_embedding_dim * (8 + 4 + 2 + 1), reduction = 8, skip_connection=True)
+
+        # 1x1 conv to reduce the number of channels after the concatenation + CBAM.
+        self.conv1x1 = nn.Conv2d(in_channels = transformer_embedding_dim * (8 + 4 + 2 + 1), out_channels = out_channel_dim, 
+                                kernel_size = 1, stride = 1, padding = 0, bias = False)
+
+
+    
 
     def forward(self, multiscale_features):
         # Input features are expected to be in (N, L, C) format.
@@ -192,23 +222,43 @@ class StandardMultiScaleFusion(nn.Module):
         
         stage_0, stage_1, stage_2, stage_3 = multiscale_features
         
-        stage_0 = stage_0.permute(0, 2, 1).reshape(-1, stage_0.shape[2], 56, 56)
-        stage_1 = stage_1.permute(0, 2, 1).reshape(-1, stage_1.shape[2], 28, 28)
-        stage_2 = stage_2.permute(0, 2, 1).reshape(-1, stage_2.shape[2], 14, 14)
-        stage_3 = stage_3.permute(0, 2, 1).reshape(-1, stage_3.shape[2], 7, 7)
+        B, L0, C0 = stage_0.shape
+        h0 = w0 = int(L0 ** 0.5)
+        stage_0 = stage_0.permute(0, 2, 1).reshape(-1, C0, h0, w0)
 
-        stage_0 = self.relu(self.conv11(stage_0))
-        stage_0 = self.relu(self.conv12(stage_0))
-        stage_0 = self.relu(self.conv13(stage_0))
-
-        stage_1 = self.relu(self.conv21(stage_1))
-        stage_1 = self.relu(self.conv22(stage_1))
-
-        stage_2 = self.relu(self.conv31(stage_2))
-
-        stage_3 = self.relu(self.conv41(stage_3))
-
-        fused_output = torch.cat([stage_0, stage_1, stage_2, stage_3], dim = 1)
+        B, L1, C1 = stage_1.shape
+        h1 = w1 = int(L1 ** 0.5)
+        stage_1 = stage_1.permute(0, 2, 1).reshape(-1, C1, h1, w1)
         
+        B, L2, C2 = stage_2.shape
+        h2 = w2 = int(L2 ** 0.5)
+        stage_2 = stage_2.permute(0, 2, 1).reshape(-1, C2, h2, w2)
         
-        return self.cbam(fused_output)
+        B, L3, C3 = stage_3.shape
+        h3 = w3 = int(L3 ** 0.5)
+        stage_3 = stage_3.permute(0, 2, 1).reshape(-1, C3, h3, w3)
+
+
+        # attention before spatial downsampling
+        stage_0 = self.cbam0(stage_0) 
+        stage_1 = self.cbam1(stage_1)
+        stage_2 = self.cbam2(stage_2)
+    
+
+        # spatial downsampling
+        stage_0 = self.down0(stage_0)
+        stage_1 = self.down1(stage_1)
+        stage_2 = self.down2(stage_2)
+        # no spatial downsampling for stage 3
+
+
+        # concatenate the features to generate a giant feature vector
+        fused_features = torch.cat([stage_0, stage_1, stage_2, stage_3], dim = 1)
+
+        # apply CBAM before channel compression
+        fused_features = self.cbam_final(fused_features)
+
+        # perform channel compression
+        fused_features = self.activation(self.conv1x1(fused_features))
+        
+        return fused_features
