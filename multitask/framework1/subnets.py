@@ -42,26 +42,26 @@ class BasicHead(nn.Module):
         The subnet's job will be to only turn the features extracted by this module into
         usable logits for prediction.
     """
-    def __init__(self, multiscale_fusion_type = 'standard'):
+    def __init__(self, multiscale_fusion_type = 'standard', out_channel_dim = 512):
         super(BasicHead, self).__init__()
 
         if multiscale_fusion_type == 'standard':
-            self.feature_fusion = StandardMultiScaleFusion()
+            self.feature_fusion = StandardMultiScaleFusion(out_channel_dim = out_channel_dim)
         else:
-            self.feature_fusion = LightMultiScaleFusion()
+            self.feature_fusion = LightMultiScaleFusion(out_channel_dim = out_channel_dim)
 
         self.head = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)), # 7x7x512 -> 1x1x512
-            nn.Flatten(), # 1x1x512 -> 512
+            nn.AdaptiveAvgPool2d((1, 1)), # 7x7xout_channel_dim -> 1x1xout_channel_dim
+            nn.Flatten(), # 1x1xout_channel_dim -> out_channel_dim
             
-            nn.Linear(in_features = 512, out_features = 512, bias = False),
-            nn.BatchNorm1d(num_features = 512, eps = 2e-5),
-            nn.ReLU(inplace = True),
+            nn.Linear(in_features = out_channel_dim, out_features = out_channel_dim, bias = False),
+            nn.BatchNorm1d(num_features = out_channel_dim, eps = 2e-5),
+            nn.SiLU(inplace = True),
             nn.Dropout(0.2),
 
-            nn.Linear(in_features = 512, out_features = 512, bias = False),
-            nn.BatchNorm1d(num_features = 512, eps = 2e-5),
-            nn.ReLU(inplace = True),
+            nn.Linear(in_features = out_channel_dim, out_features = out_channel_dim, bias = False),
+            nn.BatchNorm1d(num_features = out_channel_dim, eps = 2e-5),
+            nn.SiLU(inplace = True),
             nn.Dropout(0.2),
         )
     
@@ -134,18 +134,46 @@ class RaceRecognitionSubnet(nn.Module):
 
 
 class AttributeRecognitionSubnet(nn.Module):
-    def __init__(self, num_classes = 40, multiscale_fusion_type = 'standard'):
+    def __init__(self, multiscale_fusion_type='light'):
         super(AttributeRecognitionSubnet, self).__init__()
 
-        self.basic_head = BasicHead(multiscale_fusion_type = multiscale_fusion_type)
+        # Define Groups
+        self.attribute_groups = {
+            'mouth' : ['5_o_Clock_Shadow', 'Big_Lips', 'Mouth_Slightly_Open', 'Mustache', 'Wearing_Lipstick', 'No_Beard'],
+            'ear' : ['Wearing_Earrings'],
+            'lower_face': ['Double_Chin', 'Goatee', 'Wearing_Necklace', 'Wearing_Necktie'],
+            'cheeks' : ['High_Cheekbones', 'Rosy_Cheeks', 'Sideburns'],
+            'nose' : ['Big_Nose', 'Pointy_Nose'],
+            'eyes' : ['Arched_Eyebrows', 'Bags_Under_Eyes', 'Bushy_Eyebrows', 'Narrow_Eyes', 'Eyeglasses'],
+            'hair' : ['Bald', 'Bangs', 'Black_Hair', 'Blond_Hair', 'Brown_Hair', 'Gray_Hair', 'Receding_Hairline', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Hat'],
+            'object' : ['Attractive', 'Blurry', 'Chubby', 'Heavy_Makeup', 'Male', 'Oval_Face', 'Pale_Skin', 'Smiling', 'Young']
+        }
         
-        self.head = nn.Sequential(
-            self.basic_head,
-            nn.Linear(in_features = 512, out_features = num_classes, bias = True),
-        )
-    
+        self.channel_dim = 512
+        self.heads = nn.ModuleList()
+        self.classifiers = nn.ModuleList()
+        
+        for group_name in self.attribute_groups.keys():
+            attributes = self.attribute_groups[group_name]
+            num_classes = len(attributes) 
+            
+            subnet_head = BasicHead(multiscale_fusion_type=multiscale_fusion_type, out_channel_dim=self.channel_dim)
+            self.heads.append(subnet_head)
+            
+            classifier = nn.Linear(self.channel_dim, num_classes)
+            self.classifiers.append(classifier)
+
     def forward(self, multiscale_features):
-        return self.head(multiscale_features)
+        outputs = []
+        
+        for head, classifier in zip(self.heads, self.classifiers):
+            group_embedding = head(multiscale_features)
+            logits = classifier(group_embedding)
+            outputs.append(logits)
+        
+        return torch.cat(outputs, dim=1)
+
+
 
 
 class PoseEstimationSubnet(nn.Module):

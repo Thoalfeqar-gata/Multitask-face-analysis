@@ -196,7 +196,7 @@ def main(**kwargs):
             other_params.append(param)
             attribute_rec_subnet_parameters_count += param.numel()
 
-        elif 'head_pose_estimation_subnet' in name:
+        elif 'pose_estimation_subnet' in name:
             other_params.append(param)
             pose_estimation_subnet_parameters_count += param.numel()
 
@@ -209,19 +209,23 @@ def main(**kwargs):
     assert len(other_params) != 0, 'No subnet parameters found!'
 
 
-    print(f'Backbone parameters: {backbone_params_count} <'.ljust(50, '='))
-    print(f'Face recognition subnet parameters: {face_rec_subnet_parameters_count} <'.ljust(50, '='))
-    print(f'Margin head parameters:  {margin_head_params_count} <'.ljust(50, '='))
-    print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters_count} <'.ljust(50, '='))
-    print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters_count} <'.ljust(50, '='))
-    print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(50, '='))
-    print(f'Race recognition subnet parameters: {race_rec_subnet_parameters_count} <'.ljust(50, '='))
+    print(f'Backbone parameters: {backbone_params_count} <'.ljust(75, '='))
+    print(f'Face recognition subnet parameters: {face_rec_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Margin head parameters:  {margin_head_params_count} <'.ljust(75, '='))
+    print(f'Emotion recognition subnet parameters: {emotion_rec_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Age estimation subnet parameters: {age_estimation_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Race recognition subnet parameters: {race_rec_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Attribute recognition subnet parameters: {attribute_rec_subnet_parameters_count} <'.ljust(75, '='))
+    print(f'Head pose estimation subnet parameters: {pose_estimation_subnet_parameters_count} <'.ljust(75, '='))
     print(f'Total (excluding the margin head parameters): {backbone_params_count + 
                     face_rec_subnet_parameters_count + 
                     emotion_rec_subnet_parameters_count + 
                     age_estimation_subnet_parameters_count + 
                     gender_rec_subnet_parameters_count + 
-                    race_rec_subnet_parameters_count}')
+                    race_rec_subnet_parameters_count + 
+                    attribute_rec_subnet_parameters_count + 
+                    pose_estimation_subnet_parameters_count}')
 
     # Create parameter groups with different learning rates
     param_groups = [

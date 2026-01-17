@@ -51,7 +51,8 @@ class LightMultiScaleFusion(nn.Module):
         super(LightMultiScaleFusion, self).__init__()
         
         self.activation = nn.SiLU(inplace = True)
-        
+        self.total_channels = transformer_embedding_dim * (8 + 4 + 2 + 1)
+
         # Spatial downsampling layers.
         # stage_0
         self.down0 = nn.Sequential(
@@ -93,9 +94,11 @@ class LightMultiScaleFusion(nn.Module):
         self.cbam_final = CBAM(channels = transformer_embedding_dim * (8 + 4 + 2 + 1), reduction = 16, skip_connection=True)
 
         # 1x1 conv to reduce the number of channels after the concatenation + CBAM.
-        self.conv1x1 = nn.Conv2d(in_channels = transformer_embedding_dim * (8 + 4 + 2 + 1), out_channels = out_channel_dim, 
-                                kernel_size = 1, stride = 1, padding = 0, bias = False)
-        
+        self.compressor = nn.Sequential(
+            nn.Conv2d(self.total_channels, out_channel_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(out_channel_dim),
+            self.activation
+        )
 
     def forward(self, multiscale_features):
         # Input features are expected to be in (N, L, C) format.
@@ -142,7 +145,7 @@ class LightMultiScaleFusion(nn.Module):
         fused_features = self.cbam_final(fused_features)
 
         # perform channel compression
-        fused_features = self.conv1x1(fused_features)
+        fused_features = self.compressor(fused_features)
         
         return fused_features
     
@@ -165,7 +168,8 @@ class StandardMultiScaleFusion(nn.Module):
     def __init__(self, out_channel_dim = 512, transformer_embedding_dim = 96):
         super(StandardMultiScaleFusion, self).__init__()
         
-        self.activation = nn.ReLU(inplace = True)
+        self.activation = nn.SiLU(inplace = True)
+        self.total_channels = transformer_embedding_dim * (8 + 4 + 2 + 1)
 
         # The following depthwise convolutional layers are used to downsample the spatial resolution and keeping the channel size fixed.
         # stage_0
@@ -208,11 +212,12 @@ class StandardMultiScaleFusion(nn.Module):
         self.cbam_final = CBAM(channels = transformer_embedding_dim * (8 + 4 + 2 + 1), reduction = 8, skip_connection=True)
 
         # 1x1 conv to reduce the number of channels after the concatenation + CBAM.
-        self.conv1x1 = nn.Conv2d(in_channels = transformer_embedding_dim * (8 + 4 + 2 + 1), out_channels = out_channel_dim, 
-                                kernel_size = 1, stride = 1, padding = 0, bias = False)
+        self.compressor = nn.Sequential(
+            nn.Conv2d(self.total_channels, out_channel_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(out_channel_dim),
+            self.activation
+        )
 
-
-    
 
     def forward(self, multiscale_features):
         # Input features are expected to be in (N, L, C) format.
@@ -259,6 +264,6 @@ class StandardMultiScaleFusion(nn.Module):
         fused_features = self.cbam_final(fused_features)
 
         # perform channel compression
-        fused_features = self.activation(self.conv1x1(fused_features))
+        fused_features = self.compressor(fused_features)
         
         return fused_features

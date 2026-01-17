@@ -303,7 +303,7 @@ class AgeDB(BaseDatasetClass):
     
     def get_sample_weights(self):
         """
-            Returns the weight of each sample such that it balances the males and females.
+            Returns the weight of each sample such that it balances the males and females. Age is not balanced
             The final weight must sum to 1.
         """
 
@@ -445,7 +445,24 @@ class CelebA(BaseDatasetClass):
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
 
+        self.attribute_groups = {
+            'mouth' : ['5_o_Clock_Shadow', 'Big_Lips', 'Mouth_Slightly_Open', 'Mustache', 'Wearing_Lipstick', 'No_Beard'],
+            'ear' : ['Wearing_Earrings'],
+            'lower_face': ['Double_Chin', 'Goatee', 'Wearing_Necklace', 'Wearing_Necktie'],
+            'cheeks' : ['High_Cheekbones', 'Rosy_Cheeks', 'Sideburns'],
+            'nose' : ['Big_Nose', 'Pointy_Nose'],
+            'eyes' : ['Arched_Eyebrows', 'Bags_Under_Eyes', 'Bushy_Eyebrows', 'Narrow_Eyes', 'Eyeglasses'],
+            'hair' : ['Bald', 'Bangs', 'Black_Hair', 'Blond_Hair', 'Brown_Hair', 'Gray_Hair', 'Receding_Hairline', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Hat'],
+            'object' : ['Attractive', 'Blurry', 'Chubby', 'Heavy_Makeup', 'Male', 'Oval_Face', 'Pale_Skin', 'Smiling', 'Young']
+        }
     
+    def get_cut_indices(self):
+        cut_indices = [0]
+        for key, value in self.attribute_groups.items():
+            cut_indices.append(len(value) + cut_indices[-1])
+        
+        return cut_indices
+
     def __getitem__(self, idx):
         filename = self.labels_df['filename'][idx]
         image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
