@@ -149,7 +149,7 @@ class AttributeRecognitionSubnet(nn.Module):
             'object' : ['Attractive', 'Blurry', 'Chubby', 'Heavy_Makeup', 'Male', 'Oval_Face', 'Pale_Skin', 'Smiling', 'Young']
         }
         
-        self.channel_dim = 512
+        self.channel_dim = 128
         self.heads = nn.ModuleList()
         self.classifiers = nn.ModuleList()
         

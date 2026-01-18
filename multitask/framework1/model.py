@@ -101,7 +101,7 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         self.race_recognition_subnet = RaceRecognitionSubnet(multiscale_fusion_type=self.multiscale_fusion_type)
 
         # Attribute Recognition
-        self.attribute_recognition_subnet = AttributeRecognitionSubnet(multiscale_fusion_type=self.multiscale_fusion_type)
+        self.attribute_recognition_subnet = AttributeRecognitionSubnet() # keep the default, which uses light multiscale fusion.
 
         # Pose estimation
         self.pose_estimation_subnet = PoseEstimationSubnet(multiscale_fusion_type=self.multiscale_fusion_type)

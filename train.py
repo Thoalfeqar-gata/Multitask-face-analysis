@@ -14,7 +14,7 @@ from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.framework1.model import MultiTaskFaceAnalysisModel
-from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_pose_light import config
+from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_pose_standard import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
 from utility_scripts.losses import dldl_loss, geodesic_loss, AsymmetricLossOptimized
@@ -52,6 +52,7 @@ def main(**kwargs):
     ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
     num_classes = ms1mv2.number_of_classes()
     celeba = db.CelebA(transform = attribute_recognition_transform, subset = 'train')
+    attribute_pos_weight = celeba.get_attribute_weights().to(device)
 
     train_db_dict = {
         'face_recognition' : [ms1mv2],
@@ -432,15 +433,21 @@ def main(**kwargs):
                 # CelebA returns either 0 or 1 for valid sample, where 0 = the attribute doesn't exist, 1 = attribute exists. The default label for dummy attributes is -1,
                 # so check if the first attribute from all the samples is not -1 to see which one is a valid label. 
                 attibute_mask = attribute_labels[:, 0] != -1
-                if attibute_mask.sum() > 0: # check if we have attribute recognition samples in this batch
-                    # attribute_loss = F.binary_cross_entropy_with_logits(
-                    #     attribute_output[attibute_mask], 
-                    #     attribute_labels[attibute_mask].view(-1, 40).float(),     # regular bce loss
-                    #     pos_weight=attribute_pos_weight
-                    # )
-
-                    attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
+                if attibute_mask.sum() > 0:
+                    raw_loss = F.binary_cross_entropy_with_logits(
+                        attribute_output[attibute_mask], 
+                        attribute_labels[attibute_mask].view(-1, 40).float(),
+                        pos_weight=attribute_pos_weight,
+                        reduction='none' # <--- get raw loss (without reduction)
+                    )
+                    # Sum over attributes (dim=1)
+                    loss_per_image = raw_loss.sum(dim=1) 
+                    
+                    # mean over the batch
+                    attribute_loss = loss_per_image.mean()
                     num_attribute_samples += attibute_mask.sum().item()
+
+                    # attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
 
                 
 
