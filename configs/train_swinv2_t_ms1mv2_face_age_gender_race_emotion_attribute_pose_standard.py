@@ -20,7 +20,7 @@ config = {
     'weight_decay' : 0.05,
     'gradient_clip_val' : 1.0,
     'scheduler' : 'cosine',
-    'max_epochs' : 48,
+    'max_epochs' : 64,
     'epoch_size' : 1_000_000,
     'warmup_epochs' : 3,
     'freeze_backbone_epochs' : 2,
