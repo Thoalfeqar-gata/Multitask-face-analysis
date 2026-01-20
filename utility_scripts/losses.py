@@ -62,7 +62,7 @@ def dldl_loss(logits, target, min_age=0, max_age=101, sigma=2.0, l1_weight=1.0):
 def geodesic_loss(m1, m2, eps = 1e-5):
     R_diffs = m1 @ m2.permute(0, 2, 1)
     traces = R_diffs.diagonal(dim1=-2, dim2=-1).sum(dim=-1)
-    dists = torch.acos(torch.clamp((traces - 1) / 2, -1 + eps, 1 - eps))
+    dists = torch.acos(torch.clamp((traces - 1) / 2, -1 + eps, 1 - eps)) * 180 / torch.pi # acos returns radians, so turn them to degrees. This has the effect of scaling the loss to match the loss scale of other tasks.
     return dists.mean()
 
 
