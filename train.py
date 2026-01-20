@@ -231,8 +231,8 @@ def main(**kwargs):
     # Create parameter groups with different learning rates
     param_groups = [
         {'params': backbone_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
-        {'params': face_rec_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
-        {'params': margin_head_params, 'lr': learning_rate * float(kwargs.get('backbone_lr_multiplier'))},
+        {'params': face_rec_params, 'lr': learning_rate},
+        {'params': margin_head_params, 'lr': learning_rate},
         {'params': other_params, 'lr': learning_rate}
     ]
 
@@ -264,7 +264,7 @@ def main(**kwargs):
         amp_dtype = torch.float32
         use_scaler = False
     else:
-        amp_dtype == torch.float16
+        amp_dtype = torch.float16
         use_scaler = True
     print(f'Using amp dtype: {amp_dtype}')
 
@@ -332,7 +332,6 @@ def main(**kwargs):
         running_gender_rec_loss = 0.0
         running_race_rec_loss = 0.0
         running_attribute_rec_loss = 0.0
-        running_pose_estimation_loss = 0.0
 
 
 
@@ -342,7 +341,6 @@ def main(**kwargs):
         num_gender_samples = 0
         num_race_samples = 0
         num_attribute_samples = 0
-        num_pose_samples = 0
 
 
 
@@ -373,8 +371,7 @@ def main(**kwargs):
                 (normalized_embedding, embedding_norm), \
                 emotion_output, age_output, \
                 gender_output, race_output, \
-                attribute_output, \
-                pose_output = model(images)
+                attribute_output = model(images)
 
                 # Face recognition loss
                 face_recognition_labels = labels['face_recognition'].to(device, non_blocking=True)
@@ -444,25 +441,25 @@ def main(**kwargs):
                     loss_per_image = raw_loss.sum(dim=1) 
                     
                     # mean over the batch
-                    attribute_loss = loss_per_image.mean()
-                    num_attribute_samples += attibute_mask.sum().item()
-
+                    attribute_loss = loss_per_image.mean() * 0.25 # multiply by 0.25 so as to make the scale of the loss similar to other tasks.
+                    num_attribute_samples += attibute_mask.sum().item() 
+ 
                     # attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
 
                 
 
-                # head pose estimation
-                pose_labels = labels['pose'].to(device, non_blocking=True)
-                pose_mask = pose_labels[:, 0] != -999 # same logic as attribute recognition
-                if pose_mask.sum() > 0: # check if we have head pose estimation samples in this batch
-                    # turn the raw angles into a rotation matrix
-                    target_rotation_matrices = euler_angles_to_matrix(pose_labels[pose_mask])
-                    # the model predicts two x and y vectors that are orthogonal to each other. Turn them into a rotation matrix.
-                    predicted_rotation_matrices = compute_rotation_matrix_from_ortho6d(pose_output[pose_mask])
-                    pose_loss = geodesic_loss(predicted_rotation_matrices, target_rotation_matrices)
-                    num_pose_samples += pose_mask.sum().item()
+                # # head pose estimation, removed for now
+                # pose_labels = labels['pose'].to(device, non_blocking=True)
+                # pose_mask = pose_labels[:, 0] != -999 # same logic as attribute recognition
+                # if pose_mask.sum() > 0: # check if we have head pose estimation samples in this batch
+                #     # turn the raw angles into a rotation matrix
+                #     target_rotation_matrices = euler_angles_to_matrix(pose_labels[pose_mask])
+                #     # the model predicts two x and y vectors that are orthogonal to each other. Turn them into a rotation matrix.
+                #     predicted_rotation_matrices = compute_rotation_matrix_from_ortho6d(pose_output[pose_mask])
+                #     pose_loss = geodesic_loss(predicted_rotation_matrices, target_rotation_matrices)
+                #     num_pose_samples += pose_mask.sum().item()
                                 
-                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss, attribute_loss, pose_loss]
+                losses = [face_rec_loss, emotion_loss, age_loss, gender_loss, race_loss, attribute_loss]
 
                 total_loss = 0
                 for i in range(len(losses_weights)):
@@ -487,7 +484,6 @@ def main(**kwargs):
             running_gender_rec_loss += gender_loss.item() * gender_mask.sum().item()
             running_race_rec_loss += race_loss.item() * race_mask.sum().item()
             running_attribute_rec_loss += attribute_loss.item() * attibute_mask.sum().item()
-            running_pose_estimation_loss += pose_loss.item() * pose_mask.sum().item()
             
 
             progress_bar.set_postfix(ordered_dict={
@@ -498,7 +494,6 @@ def main(**kwargs):
                 'gen' : f"{gender_loss.item():.4f}",
                 'race' : f"{race_loss.item():.4f}",
                 'attr' : f"{attribute_loss.item():.4f}",
-                'pose' : f"{pose_loss.item():.4f}",
                 'lr' : f"{optimizer.param_groups[3]['lr']:.7f}",
                 'lr_back' : f'{optimizer.param_groups[0]['lr']:.7f}',
             })
@@ -511,10 +506,9 @@ def main(**kwargs):
         epoch_gen_loss = running_gender_rec_loss / num_gender_samples
         epoch_race_loss = running_race_rec_loss / num_race_samples
         epoch_attr_loss = running_attribute_rec_loss / num_attribute_samples
-        epoch_pose_loss = running_pose_estimation_loss / num_pose_samples
-        losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss, epoch_attr_loss, epoch_pose_loss]))
+        losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss, epoch_attr_loss]))
         losses_weights_history.append(losses_weights)
-        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss + epoch_attr_loss + epoch_pose_loss
+        epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss + epoch_attr_loss
 
 
         print(f"\nEpoch {epoch+1} Summary:")
@@ -525,7 +519,6 @@ def main(**kwargs):
         print(f"  Gender Loss: {epoch_gen_loss:.4f}")
         print(f"  Race Loss: {epoch_race_loss:.4f}")
         print(f"  Attribute Loss: {epoch_attr_loss:.4f}")
-        print(f"  Pose Loss: {epoch_pose_loss:.4f}")
         print(f"  Losses Weights: {losses_weights}")
 
         checkpoint = { 

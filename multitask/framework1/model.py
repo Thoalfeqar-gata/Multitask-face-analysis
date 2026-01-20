@@ -104,7 +104,7 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         self.attribute_recognition_subnet = AttributeRecognitionSubnet() # keep the default, which uses light multiscale fusion.
 
         # Pose estimation
-        self.pose_estimation_subnet = PoseEstimationSubnet(multiscale_fusion_type=self.multiscale_fusion_type)
+        # self.pose_estimation_subnet = PoseEstimationSubnet(multiscale_fusion_type=self.multiscale_fusion_type)
         
 
     def forward(self, x):
@@ -130,9 +130,9 @@ class MultiTaskFaceAnalysisModel(nn.Module):
         attribute_output = self.attribute_recognition_subnet(multiscale_features)
 
         # Pose estimation
-        pose_output = self.pose_estimation_subnet(multiscale_features)
+        # pose_output = self.pose_estimation_subnet(multiscale_features)
         
-        return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output, attribute_output, pose_output
+        return (normalized_embedding, embedding_norm), emotion_output, age_output, gender_output, race_output, attribute_output
 
     def get_face_recognition_logits(self, normalized_embedding, embedding_norm, labels):
         return self.margin_head(normalized_embedding, embedding_norm, labels)
