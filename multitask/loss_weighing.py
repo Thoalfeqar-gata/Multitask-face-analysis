@@ -1,5 +1,6 @@
 import numpy as np
-
+import torch
+import torch.nn as nn
 
 """
 
@@ -41,5 +42,29 @@ class DynamicWeightAverage:
             self.avg_losses_previous_epoch = avg_losses_current_epoch.copy()
 
             return weights
-        
 
+
+class UncertaintyLossWrapper(nn.Module):
+    def __init__(self, num_tasks=6):
+        super(UncertaintyLossWrapper, self).__init__()
+        # We define log_var (log(sigma^2)) instead of sigma for numerical stability
+        # Initializing to 0.0 means sigma=1, equivalent to standard sum
+        self.log_vars = nn.Parameter(torch.zeros(num_tasks))
+
+    def forward(self, losses):
+        """
+        losses: list of standard calculated losses [L_fr, L_em, L_age, ...]
+        """
+        total_loss = 0
+        
+        for i, loss in enumerate(losses):
+            # Precision = 1 / (2 * sigma^2) = 0.5 * exp(-log_var)
+            precision = 0.5 * torch.exp(-self.log_vars[i])
+            
+            total_loss += (precision * loss) + (0.5 * self.log_vars[i])
+            
+        return total_loss
+
+    def get_weights(self):
+        # Returns 1 / (2 * sigma^2)
+        return 0.5 * torch.exp(-self.log_vars.detach())

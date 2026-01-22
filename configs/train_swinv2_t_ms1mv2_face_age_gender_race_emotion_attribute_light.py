@@ -1,6 +1,6 @@
 import os
 config = {
-    'output_folder_name' : 'multitask_swinv2_t_face_emotion_age_gender_race_attribute_pose_light',
+    'output_folder_name' : 'multitask_swinv2_t_face_emotion_age_gender_race_attribute_light',
     'backbone_name' : 'swin_v2_t',
     'pretrained_backbone_path' : os.path.join('data', 'models', 'swin_v2_t_adaface_MS1MV2', 'backbone.pth'),
     'pretrained_face_recognition_subnet_path' : os.path.join('data', 'models', 'swin_v2_t_adaface_MS1MV2', 'recognition_subnet.pth'),

@@ -14,7 +14,7 @@ from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.framework1.model import MultiTaskFaceAnalysisModel
-from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_pose_standard import config
+from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_light import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
 from utility_scripts.losses import dldl_loss, geodesic_loss, AsymmetricLossOptimized
@@ -66,7 +66,7 @@ def main(**kwargs):
             db.UTKFace(transform = age_gender_race_transform, subset = 'train')
         ],
         'attribute_recognition' : [celeba],
-        'head_pose_estimation' : [db.W300LP(transform = pose_estimation_transform)],
+        # 'head_pose_estimation' : [db.W300LP(transform = pose_estimation_transform)],
     }
     
     batch_size = kwargs.get('batch_size')
@@ -114,20 +114,20 @@ def main(**kwargs):
             pin_memory = True,
         )
 
-        biwi = torch.utils.data.DataLoader( # for head pose estimation
-            dataset=db.BIWI(transform=test_transform),
-            batch_size=64,
-            shuffle=True,
-            num_workers=2,
-            pin_memory=True,
-        )
+        # biwi = torch.utils.data.DataLoader( # for head pose estimation
+        #     dataset=db.BIWI(transform=test_transform),
+        #     batch_size=64,
+        #     shuffle=True,
+        #     num_workers=2,
+        #     pin_memory=True,
+        # )
 
 
         print('fairface length: ', len(fairface_test_db) * 64)
         print('affectnet length: ', len(affectnet_validation_db) * 64)
         print('morph length: ', len(morph_test_db) * 64)
         print('celeba length: ', len(celeba_validation_db) * 64)
-        print('biwi length: ', len(biwi) * 64)
+        # print('biwi length: ', len(biwi) * 64)
 
     # Training setup
     model = MultiTaskFaceAnalysisModel(
@@ -161,7 +161,7 @@ def main(**kwargs):
     gender_rec_subnet_parameters_count = 0
     race_rec_subnet_parameters_count = 0
     attribute_rec_subnet_parameters_count = 0
-    pose_estimation_subnet_parameters_count = 0
+    # pose_estimation_subnet_parameters_count = 0
 
     
     for name, param in model.named_parameters():
@@ -197,9 +197,9 @@ def main(**kwargs):
             other_params.append(param)
             attribute_rec_subnet_parameters_count += param.numel()
 
-        elif 'pose_estimation_subnet' in name:
-            other_params.append(param)
-            pose_estimation_subnet_parameters_count += param.numel()
+        # elif 'pose_estimation_subnet' in name:
+        #     other_params.append(param)
+        #     pose_estimation_subnet_parameters_count += param.numel()
 
         else:
             other_params.append(param)
@@ -218,15 +218,14 @@ def main(**kwargs):
     print(f'Gender recognition subnet parameters: {gender_rec_subnet_parameters_count} <'.ljust(75, '='))
     print(f'Race recognition subnet parameters: {race_rec_subnet_parameters_count} <'.ljust(75, '='))
     print(f'Attribute recognition subnet parameters: {attribute_rec_subnet_parameters_count} <'.ljust(75, '='))
-    print(f'Head pose estimation subnet parameters: {pose_estimation_subnet_parameters_count} <'.ljust(75, '='))
+    # print(f'Head pose estimation subnet parameters: {pose_estimation_subnet_parameters_count} <'.ljust(75, '='))
     print(f'Total (excluding the margin head parameters): {backbone_params_count + 
                     face_rec_subnet_parameters_count + 
                     emotion_rec_subnet_parameters_count + 
                     age_estimation_subnet_parameters_count + 
                     gender_rec_subnet_parameters_count + 
                     race_rec_subnet_parameters_count + 
-                    attribute_rec_subnet_parameters_count + 
-                    pose_estimation_subnet_parameters_count}')
+                    attribute_rec_subnet_parameters_count}')
 
     # Create parameter groups with different learning rates
     param_groups = [
@@ -264,12 +263,12 @@ def main(**kwargs):
         amp_dtype = torch.float32
         use_scaler = False
     else:
-        amp_dtype = torch.float16
+        amp_dtype == torch.float16
         use_scaler = True
     print(f'Using amp dtype: {amp_dtype}')
 
     scaler = torch.amp.GradScaler(device = device, enabled = use_scaler)
-    dwa = DynamicWeightAverage(num_tasks = 7)
+    dwa = DynamicWeightAverage(num_tasks = 6)
     losses_weights = dwa.calculate_weights(avg_losses_current_epoch=None)
     losses_weights_history = [losses_weights]
 
@@ -332,6 +331,7 @@ def main(**kwargs):
         running_gender_rec_loss = 0.0
         running_race_rec_loss = 0.0
         running_attribute_rec_loss = 0.0
+        # running_pose_estimation_loss = 0.0
 
 
 
@@ -341,6 +341,7 @@ def main(**kwargs):
         num_gender_samples = 0
         num_race_samples = 0
         num_attribute_samples = 0
+        # num_pose_samples = 0
 
 
 
@@ -361,7 +362,7 @@ def main(**kwargs):
             gender_loss = torch.tensor(0.0, device=device)
             race_loss = torch.tensor(0.0, device=device)
             attribute_loss = torch.tensor(0.0, device=device)
-            pose_loss = torch.tensor(0.0, device=device)
+            # pose_loss = torch.tensor(0.0, device=device)
 
             optimizer.zero_grad(set_to_none = True)
 
@@ -441,14 +442,14 @@ def main(**kwargs):
                     loss_per_image = raw_loss.sum(dim=1) 
                     
                     # mean over the batch
-                    attribute_loss = loss_per_image.mean() * 0.25 # multiply by 0.25 so as to make the scale of the loss similar to other tasks.
-                    num_attribute_samples += attibute_mask.sum().item() 
+                    attribute_loss = loss_per_image.mean()
+                    num_attribute_samples += attibute_mask.sum().item()  
  
                     # attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
 
                 
 
-                # # head pose estimation, removed for now
+                # # head pose estimation
                 # pose_labels = labels['pose'].to(device, non_blocking=True)
                 # pose_mask = pose_labels[:, 0] != -999 # same logic as attribute recognition
                 # if pose_mask.sum() > 0: # check if we have head pose estimation samples in this batch
@@ -484,6 +485,7 @@ def main(**kwargs):
             running_gender_rec_loss += gender_loss.item() * gender_mask.sum().item()
             running_race_rec_loss += race_loss.item() * race_mask.sum().item()
             running_attribute_rec_loss += attribute_loss.item() * attibute_mask.sum().item()
+            # running_pose_estimation_loss += pose_loss.item() * pose_mask.sum().item()
             
 
             progress_bar.set_postfix(ordered_dict={
@@ -494,6 +496,7 @@ def main(**kwargs):
                 'gen' : f"{gender_loss.item():.4f}",
                 'race' : f"{race_loss.item():.4f}",
                 'attr' : f"{attribute_loss.item():.4f}",
+                # 'pose' : f"{pose_loss.item():.4f}",
                 'lr' : f"{optimizer.param_groups[3]['lr']:.7f}",
                 'lr_back' : f'{optimizer.param_groups[0]['lr']:.7f}',
             })
@@ -506,6 +509,7 @@ def main(**kwargs):
         epoch_gen_loss = running_gender_rec_loss / num_gender_samples
         epoch_race_loss = running_race_rec_loss / num_race_samples
         epoch_attr_loss = running_attribute_rec_loss / num_attribute_samples
+        # epoch_pose_loss = running_pose_estimation_loss / num_pose_samples
         losses_weights = dwa.calculate_weights(np.array([epoch_fr_loss, epoch_em_loss, epoch_age_loss, epoch_gen_loss, epoch_race_loss, epoch_attr_loss]))
         losses_weights_history.append(losses_weights)
         epoch_loss = epoch_fr_loss + epoch_em_loss + epoch_age_loss + epoch_gen_loss + epoch_race_loss + epoch_attr_loss
@@ -519,6 +523,7 @@ def main(**kwargs):
         print(f"  Gender Loss: {epoch_gen_loss:.4f}")
         print(f"  Race Loss: {epoch_race_loss:.4f}")
         print(f"  Attribute Loss: {epoch_attr_loss:.4f}")
+        # print(f"  Pose Loss: {epoch_pose_loss:.4f}")
         print(f"  Losses Weights: {losses_weights}")
 
         checkpoint = { 
@@ -582,9 +587,9 @@ def main(**kwargs):
             print(f'Accuracy for CelebA (attribute recognition) = {attribute_accuracy}.')
             print(f'F1 score for CelebA (attribute recognition) = {attribute_f1}')
 
-            # Head pose estimatin 
-            mae_mean, _, _, _ = eval.evaluate_head_pose(model = model, dataloader = biwi)
-            print(f'MAE for BIWI (head pose estimation) = {mae_mean}.')
+            # # Head pose estimation 
+            # mae_mean, _, _, _ = eval.evaluate_head_pose(model = model, dataloader = biwi)
+            # print(f'MAE for BIWI (head pose estimation) = {mae_mean}.')
     
 
     # Save the final model

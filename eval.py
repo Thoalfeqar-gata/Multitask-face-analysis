@@ -32,7 +32,7 @@ def evaluate_emotion(model: torch.nn.Module, dataloader: torch.utils.data.DataLo
             targets = labels['emotion'].to(device)
             
             # Forward pass
-            _, emotion_out, _, _, _, _, _ = model(images)
+            _, emotion_out, _, _, _, _ = model(images)
             
             preds = torch.argmax(emotion_out, dim=1)
 
@@ -74,7 +74,7 @@ def evaluate_age(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader
 
             targets = labels['age'].to(device).float()
             
-            _, _, age_logits, _, _, _, _ = model(images)
+            _, _, age_logits, _, _, _ = model(images)
             
             probs = F.softmax(age_logits, dim=1)
             predicted_ages = torch.sum(probs * age_values, dim=1) 
@@ -109,7 +109,7 @@ def evaluate_gender(model: torch.nn.Module, dataloader: torch.utils.data.DataLoa
             targets = labels['gender'].to(device)
             
             # Forward pass - Extract only gender output
-            _, _, _, gender_out, _, _, _ = model(images)
+            _, _, _, gender_out, _, _ = model(images)
             
             # Accuracy (Sigmoid > 0.5)
             probs = torch.sigmoid(gender_out)
@@ -148,7 +148,7 @@ def evaluate_race(model: torch.nn.Module, dataloader: torch.utils.data.DataLoade
             images = images.to(device)
             targets = labels['race'].to(device)
             
-            _, _, _, _, race_out, _, _ = model(images)
+            _, _, _, _, race_out, _ = model(images)
             
             preds = torch.argmax(race_out, dim=1)
 
@@ -185,7 +185,7 @@ def evaluate_attributes(model: torch.nn.Module, dataloader: torch.utils.data.Dat
             # targets is the Tensor (B, 40)
             targets = labels['attributes'].to(device)
 
-            _, _, _, _, _, attribute_out, _ = model(images)
+            _, _, _, _, _, attribute_out = model(images)
             
             predictions = torch.sigmoid(attribute_out)
             preds = (predictions > 0.5).long()

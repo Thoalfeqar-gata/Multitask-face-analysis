@@ -1,6 +1,6 @@
 import os
 config = {
-    'output_folder_name' : 'multitask_davit_s_face_emotion_age_gender_race_attribute_pose_standard',
+    'output_folder_name' : 'multitask_davit_s_face_emotion_age_gender_race_attribute_standard',
     'backbone_name' : 'davit_s',
     'pretrained_backbone_path' : os.path.join('data', 'models', 'davit_s_adaface_MS1MV2', 'backbone.pth'),
     'pretrained_face_recognition_subnet_path' : os.path.join('data', 'models', 'davit_s_adaface_MS1MV2', 'recognition_subnet.pth'),
