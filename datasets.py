@@ -380,10 +380,13 @@ class AgeDB(BaseDatasetClass):
 
 
 class MORPH(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'train', **kwargs):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'MORPH'), transform = None, subset = 'combined', **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
-        if subset != None: # Can be 'train', 'test' or 'validation'
-            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+        if subset != None: # Can be 'train', 'test', or 'validation'
+            if subset == 'combined':
+                self.labels_df = pd.concat([self.labels_df[self.labels_df['split'] == 'train'], self.labels_df[self.labels_df['split'] == 'validation']])
+            else:
+                self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
 
     def __getitem__(self, index):
@@ -498,7 +501,7 @@ class FairFace(BaseDatasetClass):
 
 
 class IMDB_WIKI(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'IMDB_WIKI'), transform = None, subset = None, **kwargs):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'IMDB_WIKI'), transform = None, **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
     
     def __getitem__(self, idx):
@@ -539,10 +542,13 @@ class IMDB_WIKI(BaseDatasetClass):
 ###################################
 
 class CelebA(BaseDatasetClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'attribute recognition', 'CelebA'), transform = None, subset = None, **kwargs):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'attribute recognition', 'CelebA'), transform = None, subset = 'combined', **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
         if subset != None: # Can be 'train', 'test', or 'validation'
-            self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+            if subset == 'combined':
+                self.labels_df = pd.concat([self.labels_df[self.labels_df['split'] == 'train'], self.labels_df[self.labels_df['split'] == 'validation']])
+            else:
+                self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
 
         self.attribute_groups = {
