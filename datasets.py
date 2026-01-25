@@ -416,7 +416,7 @@ class FairFace(BaseDatasetClass):
 
     def get_sample_weights(self):
         """
-            Returns the weight of each sample such that it balanced both the race and the gender.
+            Returns the weight of each sample such that it balances both the race and the gender.
             The final weight must sum to 1.
         """
 
@@ -430,6 +430,41 @@ class FairFace(BaseDatasetClass):
 
         sample_weights = gender_sample_weights * race_sample_weights
         return sample_weights / sample_weights.sum()
+
+
+class IMDB_WIKI(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'age gender and race estimation', 'IMDB_WIKI'), transform = None, subset = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image = decode_image(os.path.join(self.images_dir, filename), mode = torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        gender = self.labels_df['gender'][idx]
+        age = self.labels_df['age'][idx]
+
+        label = self.get_default_labels()
+        label['gender'] = gender
+        label['age'] = age
+
+        return image, label
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample such that it balances the gender.
+            The final weight must sum to 1.
+        """
+        label_counts = self.labels_df['gender'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['gender'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
+
+
+        
+
     
 
 ###################################
