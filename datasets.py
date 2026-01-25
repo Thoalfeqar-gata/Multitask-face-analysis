@@ -229,13 +229,50 @@ class VGG2FP(FaceVerificationClass):
 
 ###################################
 
-class EmotionRecognitionClass(BaseDatasetClass):
+class AffectNet(BaseDatasetClass):
     """
         The base class for all emotion recognition datasets.
     """
-    def __init__(self, dataset_dir, subset = None, transform = None, **kwargs):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), subset = 'combined', transform = None, **kwargs):
         super().__init__(dataset_dir, transform, **kwargs)
-        if 'split' in self.labels_df.columns and subset != None: # will be used mainly with RAFDB
+
+        if subset != None: # Either train, test, or combined (train + test).
+            if subset != 'combined':
+                self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+
+            self.labels_df.reset_index(drop = True, inplace = True)
+    
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image_path = os.path.join(self.images_dir, filename)
+        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = self.get_default_labels()
+        label['emotion'] = self.labels_df['label'][idx]
+
+        return image, label
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample in this dataset such that it balances the classes.
+            Classes with low samples get a higher weight.
+            The final weight must sum to 1.
+        """
+
+        label_counts = self.labels_df['label'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['label'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
+
+
+class RAFDB(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
+        if subset != None: 
             self.labels_df = self.labels_df[self.labels_df['split'] == subset]
             self.labels_df.reset_index(drop = True, inplace = True)
     
@@ -266,13 +303,41 @@ class EmotionRecognitionClass(BaseDatasetClass):
         return sample_weights / sample_weights.sum()
 
 
-class AffectNet(EmotionRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'AffectNet'), subset = 'train', transform = None, **kwargs):
-        super().__init__(dataset_dir, subset = subset, transform = transform, **kwargs)
+class FERPlus(BaseDatasetClass):
+    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'FERPlus'), subset = 'combined', transform = None, **kwargs):
+        super().__init__(dataset_dir, transform, **kwargs)
 
-class RAFDB(EmotionRecognitionClass):
-    def __init__(self, dataset_dir = os.path.join('data', 'datasets', 'emotion recognition', 'RAF_DB'), subset = 'train', transform = None, **kwargs):
-        super().__init__(dataset_dir, subset = subset, transform = transform, **kwargs)
+        if subset != None: # Either train, test, or combined (train + test).
+            if subset != 'combined':
+                self.labels_df = self.labels_df[self.labels_df['split'] == subset]
+
+            self.labels_df.reset_index(drop = True, inplace = True)
+    
+    
+    def __getitem__(self, idx):
+        filename = self.labels_df['filename'][idx]
+        image_path = os.path.join(self.images_dir, filename)
+        image = decode_image(image_path, mode = torchvision.io.image.ImageReadMode.RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = self.get_default_labels()
+        label['emotion'] = self.labels_df['label'][idx]
+
+        return image, label
+
+    def get_sample_weights(self):
+        """
+            Returns the weight of each sample in this dataset such that it balances the classes.
+            Classes with low samples get a higher weight.
+            The final weight must sum to 1.
+        """
+
+        label_counts = self.labels_df['label'].value_counts().sort_index()
+        class_weights = len(self.labels_df) / label_counts
+        sample_weights = self.labels_df['label'].map(class_weights).to_numpy()
+        return sample_weights / sample_weights.sum()
 
 
 ###################################
