@@ -27,7 +27,7 @@ class CAM(nn.Module):
         super(CAM, self).__init__()
         
         self.mlp = nn.Sequential(
-            nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=False), # nn.Conv2d(kernel_size = 1) is equivalent to a nn.Linear, but cleaner to implement
+            nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=True), # nn.Conv2d(kernel_size = 1) is equivalent to a nn.Linear, but cleaner to implement
             nn.SiLU(inplace=True), # SiLU Is smoother than ReLU
             nn.Conv2d(channels // reduction, channels, kernel_size=1, bias=False)
         )
@@ -53,10 +53,11 @@ class CBAM(nn.Module):
         self.skip_connection = skip_connection
 
     def forward(self, x):
-        output = self.cam(x)
-        output = self.sam(x)
+        residual = x
+        x = self.cam(x)
+        x = self.sam(x)
 
         if self.skip_connection:
-            return x + output
+            return residual + x
         else:
-            return output
+            return x

@@ -102,7 +102,7 @@ class BaseDatasetClass(torch.utils.data.Dataset):
             'gender' : -1,
             'race' : -1,
             'attributes' : torch.ones(40, dtype = torch.int32) * -1, # place -1 for all the 40 attributes
-            'pose' : torch.ones(3, dtype = torch.float32) * -999, # place -999 for all the 3 angles. We can't place -1 because it could be a valid angle.
+            # 'pose' : torch.ones(3, dtype = torch.float32) * -999, # place -999 for all the 3 angles. We can't place -1 because it could be a valid angle.
         }
         if self.return_name:
             label['dataset_name'] = self.__class__.__name__

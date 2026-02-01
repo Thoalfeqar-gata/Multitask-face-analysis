@@ -14,7 +14,7 @@ from augmentation import Augmenter, get_task_augmentation_transforms
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from multitask.framework1.model import MultiTaskFaceAnalysisModel
-from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_light import config
+from configs.train_swinv2_t_ms1mv2_face_age_gender_race_emotion_attribute_light_final import config
 from multitask.loss_weighing import DynamicWeightAverage
 from matplotlib import pyplot as plt
 from utility_scripts.losses import dldl_loss, geodesic_loss, AsymmetricLossOptimized
@@ -37,10 +37,10 @@ def main(**kwargs):
     emotion_recognition_transform = transforms['emotion_recognition']
     age_gender_race_transform = transforms['age_gender_race_recognition']
     attribute_recognition_transform = transforms['attribute_recognition']
-    pose_estimation_transform = transforms['head_pose_estimation']
+    # pose_estimation_transform = transforms['head_pose_estimation']
     
 
-    test_transform = v2.Compose([ # for testing on datasets other than face recognition.
+    test_transform = v2.Compose([
         v2.ToImage(),
         v2.ToDtype(torch.float32, scale = True),
         v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -51,19 +51,21 @@ def main(**kwargs):
     # training
     ms1mv2 = db.MS1MV2(transform=train_face_rec_transform, return_name = return_name)
     num_classes = ms1mv2.number_of_classes()
-    celeba = db.CelebA(transform = attribute_recognition_transform, subset = 'train')
+    celeba = db.CelebA(transform = attribute_recognition_transform, subset = 'combined')
     attribute_pos_weight = celeba.get_attribute_weights().to(device)
 
     train_db_dict = {
         'face_recognition' : [ms1mv2],
         'emotion_recognition' : [
-            db.AffectNet(transform = emotion_recognition_transform, subset = 'train'), 
+            db.FERPlus(transform = emotion_recognition_transform, subset = 'combined'),
+            db.AffectNet(transform = emotion_recognition_transform, subset = 'combined'), 
             db.RAFDB(transform = emotion_recognition_transform, subset = 'train')
         ],
         'age_gender_race_recognition' : [
-            db.MORPH(transform = age_gender_race_transform, subset = 'train'),
+            db.MORPH(transform = age_gender_race_transform, subset = 'combined'),
             db.FairFace(transform = age_gender_race_transform, subset = 'train'),
-            db.UTKFace(transform = age_gender_race_transform, subset = 'train')
+            db.UTKFace(transform = age_gender_race_transform, subset = 'train'),
+            db.IMDB_WIKI(transform = age_gender_race_transform)
         ],
         'attribute_recognition' : [celeba],
         # 'head_pose_estimation' : [db.W300LP(transform = pose_estimation_transform)],
@@ -90,8 +92,8 @@ def main(**kwargs):
             pin_memory = True,
         )
 
-        affectnet_validation_db = torch.utils.data.DataLoader( # for emotion recognition
-            dataset = db.AffectNet(transform = test_transform, subset = 'test'),
+        rafdb_validation_db = torch.utils.data.DataLoader( # for emotion recognition
+            dataset = db.RAFDB(transform = test_transform, subset = 'test'),
             batch_size = 64,
             shuffle = True,
             num_workers = 2,
@@ -99,7 +101,7 @@ def main(**kwargs):
         )
 
         morph_test_db = torch.utils.data.DataLoader( # for age estimation and gender recognition 
-            dataset = db.MORPH(transform = test_transform, subset = 'validation'),
+            dataset = db.MORPH(transform = test_transform, subset = 'test'),
             batch_size = 64,
             shuffle = True,
             num_workers = 2,
@@ -107,7 +109,7 @@ def main(**kwargs):
         )
 
         celeba_validation_db = torch.utils.data.DataLoader( # for attribute recognition
-            dataset = db.CelebA(transform = test_transform, subset = 'validation'),
+            dataset = db.CelebA(transform = test_transform, subset = 'test'),
             batch_size = 64,
             shuffle = True,
             num_workers = 2,
@@ -124,7 +126,7 @@ def main(**kwargs):
 
 
         print('fairface length: ', len(fairface_test_db) * 64)
-        print('affectnet length: ', len(affectnet_validation_db) * 64)
+        print('affectnet length: ', len(rafdb_validation_db) * 64)
         print('morph length: ', len(morph_test_db) * 64)
         print('celeba length: ', len(celeba_validation_db) * 64)
         # print('biwi length: ', len(biwi) * 64)
@@ -393,7 +395,7 @@ def main(**kwargs):
                 emotion_labels = labels['emotion'].to(device, non_blocking=True)
                 emotion_mask = emotion_labels != -1
                 if emotion_mask.sum() > 0: # check if we have emotion recognition samples in this batch
-                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask])
+                    emotion_loss = F.cross_entropy(emotion_output[emotion_mask], emotion_labels[emotion_mask]) * 5 # scale to match other losses
                     num_emotion_samples += emotion_mask.sum().item()
                 
 
@@ -422,7 +424,7 @@ def main(**kwargs):
                 race_labels = labels['race'].to(device, non_blocking=True)
                 race_mask = race_labels != -1
                 if race_mask.sum() > 0: # check if we have race recognition samples in this batch
-                    race_loss = F.cross_entropy(race_output[race_mask], race_labels[race_mask])
+                    race_loss = F.cross_entropy(race_output[race_mask], race_labels[race_mask]) * 5 # scale to match other losses                                                                                                                                                   
                     num_race_samples += race_mask.sum().item()
 
                 
@@ -432,6 +434,13 @@ def main(**kwargs):
                 # so check if the first attribute from all the samples is not -1 to see which one is a valid label. 
                 attibute_mask = attribute_labels[:, 0] != -1
                 if attibute_mask.sum() > 0:
+                    # # Alternative 1: Asymmetric Loss
+                    # attribute_loss = asymmetric_loss(
+                    #     attribute_output[attibute_mask], 
+                    #     attribute_labels[attibute_mask].view(-1, 40).float()
+                    # )
+                    
+                    # Alternative 2: Binary Cross Entropy (BCE)
                     raw_loss = F.binary_cross_entropy_with_logits(
                         attribute_output[attibute_mask], 
                         attribute_labels[attibute_mask].view(-1, 40).float(),
@@ -445,7 +454,7 @@ def main(**kwargs):
                     attribute_loss = loss_per_image.mean()
                     num_attribute_samples += attibute_mask.sum().item()  
  
-                    # attribute_loss = asymmetric_loss(attribute_output[attibute_mask], attribute_labels[attibute_mask].view(-1, 40).float())
+
 
                 
 
@@ -564,8 +573,8 @@ def main(**kwargs):
                 print(f'Accuracy for {key} = {accuracy}.')
 
             # Emotion Recognition
-            emotion_accuracy, _, _, _, _= eval.evaluate_emotion(model = model, dataloader = affectnet_validation_db)
-            print(f'Accuracy for AffectNet (emotion recognition) = {emotion_accuracy}.')
+            emotion_accuracy, _, _, _, _= eval.evaluate_emotion(model = model, dataloader = rafdb_validation_db)
+            print(f'Accuracy for RAFDB (emotion recognition) = {emotion_accuracy}.')
 
             # Age estimation
             age_mae, _, _ = eval.evaluate_age(model = model, dataloader = morph_test_db)

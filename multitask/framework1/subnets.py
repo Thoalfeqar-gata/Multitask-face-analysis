@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from multitask.framework1.multiscale_fusion import StandardMultiScaleFusion, LightMultiScaleFusion
+from multitask.framework1.cbam import CBAM
 
 
 ##########################
